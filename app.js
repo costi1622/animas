@@ -1,8 +1,8 @@
-/* Animas 1.0 — poză + ce vrei să facă personajul → clip video realist.
+/* Animas 1.0.1 — poză + ce vrei să facă personajul → clip video realist.
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.0';
+const APP_VER = '1.0.1';
 
 /* ───────── utilitare ───────── */
 const $ = s => document.querySelector(s);
@@ -204,7 +204,7 @@ async function send(final){
 
 /* ───────── lucrări (persistente: se reiau la pornire) ───────── */
 const jobTick = {};
-async function runJob(job, resume){
+async function runJob(job, resume, got){
   try{
     if(!job.taskUUID){
       if(resume) throw new Error('Trimiterea s-a întrerupt înainte să ajungă la Runware.');
@@ -214,7 +214,11 @@ async function runJob(job, resume){
       await rwSend(task);
     }
     job.state = 'lucru'; await saveJobs(); renderJobs();
-    const x = await rwWait(job.taskUUID, 'video', {onTick:s => { jobTick[job.id] = Math.round((Date.now() - job.at) / 1000); updJob(job); }, maxMs:30 * 60e3});
+    const ac = new AbortController(); JOB_AC[job.id] = ac;
+    const x = got || await rwWait(job.taskUUID, 'video', {signal:ac.signal, maxMs:30 * 60e3,
+      onTick:s => { jobTick[job.id] = Math.round((Date.now() - job.at) / 1000); updJob(job); },
+      onStatus:o => { const r = JOB_RW[job.id] || (JOB_RW[job.id] = {}); if(o.st) r.st = o.st; if(o.raw) r.raw = o.raw; if(o.det) r.det = o.det; r.at = Date.now(); updJob(job); }});
+    delete JOB_AC[job.id];
     job.state = 'descarc'; updJob(job);
     const vb = await fetchBlob(x.videoURL || x.mediaURL || x.outputURL, 'video/mp4');
     const cost = +x.cost > 0 ? +x.cost : job.est; addCost('runware', cost);
@@ -232,19 +236,53 @@ async function runJob(job, resume){
     toast(`${job.draft ? 'Schița' : 'Clipul'} e gata · ${usdC(cost)}${score && score.avg != null ? ' · fața ' + score.avg + '%' : ''}`, 5000);
     if(!$('#v-creeaza').hidden){ renderJobs(); renderLast(); } else if(!$('#v-galerie').hidden) renderGallery();
   }catch(e){
-    if(e.name === 'AbortError') return;
+    delete JOB_AC[job.id];
+    if(e.name === 'AbortError'){
+      // oprit din „Detalii” (gata sau eroare la Runware) sau din „Renunță”
+      if(job.stopGot){ const g = job.stopGot; delete job.stopGot; job.state = 'lucru'; renderJobs(); return runJob(job, false, g); }
+      job.state = 'eroare'; job.err = job.stopWhy || 'Oprit de tine. Dacă Runware îl termină totuși, „Reia” îl preia fără să-l plătești din nou.'; delete job.stopWhy;
+      await saveJobs(); renderJobs(); return;
+    }
     // Runware nu știe de sarcină = n-a ajuns la ei: „Reia” o trimite din nou (nu se plătește de două ori)
     if(e.notFound && job.taskUUID){ delete job.taskUUID; e = new Error('Clipul n-a ajuns la Runware. Apasă „Reia” ca să-l trimiți din nou.'); }
     job.state = 'eroare'; job.err = String(e.message || e).slice(0, 300); await saveJobs(); renderJobs();
   }
 }
+const JOB_AC = {}, JOB_RW = {};   // 1.0.1: oprirea și ce a răspuns Runware ultima dată, pe lucrare
 const JOB_ST = {trimit:'se trimite', trimis:'trimis', lucru:'Runware lucrează', descarc:'descarc clipul', verific:'verific fața', eroare:'eroare'};
 function jobHTML(j){
   const m = MODELE[j.mk] || {nume:j.mk}, el = jobTick[j.id] ?? Math.round((Date.now() - j.at) / 1000);
   return `<div class="job ${j.state === 'eroare' ? 'err' : ''}" id="job-${j.id}"><div><b>${j.draft ? 'Schiță' : 'Final'} · ${esc(m.nume)} ${j.res} · ${j.sec} s</b>
     <div class="muted">${JOB_ST[j.state] || j.state}${j.state !== 'eroare' ? ' · ' + Math.floor(el / 60) + ':' + String(el % 60).padStart(2, '0') : ''} · ${j.estMin ? '≥' : ''}${usdC(j.est)}</div>
-    ${j.err ? `<div class="errtxt">${esc(j.err)}</div>` : ''}</div>
-    ${j.state === 'eroare' ? `<button class="sm" onclick="retryJob('${j.id}')">Reia</button><button class="sm ghost" onclick="dropJob('${j.id}')">Șterge</button>` : '<span class="spin"></span>'}</div>`;
+    ${j.state === 'lucru' ? rwLine(j, el) : ''}
+    ${j.err ? `<div class="errtxt">${esc(j.err)}</div>` : ''}
+    ${j.state === 'lucru' || j.state === 'eroare' ? `<div class="row wrap">${j.state === 'eroare' ? `<button class="sm" onclick="retryJob('${j.id}')">Reia</button><button class="sm ghost" onclick="dropJob('${j.id}')">Șterge</button>` : `<button class="sm ghost" onclick="stopJob('${j.id}')">Renunță</button>`}${j.taskUUID ? `<button class="sm ghost" onclick="jobDetails('${j.id}')">Detalii</button>` : ''}</div>` : ''}</div>
+    ${j.state === 'eroare' ? '' : '<span class="spin"></span>'}</div>`;
+}
+// ce a spus Runware ultima dată + avertizarea după 10 minute
+function rwLine(j, el){
+  const r = JOB_RW[j.id], ago = r && r.at ? Math.round((Date.now() - r.at) / 1000) : null;
+  const st = r && r.st ? ({processing:'în lucru', success:'gata'}[r.st] || r.st) : 'aștept primul răspuns';
+  return `<div class="muted">Runware: ${esc(st)}${ago != null ? ` (acum ${ago} s)` : ''}${r && r.det ? ' · detalii: ' + esc(r.det.msg) : ''}</div>`
+    + (el > 600 ? '<div class="warn" style="font-size:13px">Durează mai mult decât de obicei (~2 min pentru 8 s). Aplicația verifică singură și detaliile la Runware la fiecare 2 minute.</div>' : '');
+}
+function stopJob(id){ const ac = JOB_AC[id]; if(ac) ac.abort(); else { const j = jobs.find(x => x.id === id); if(j){ j.state = 'eroare'; j.err = 'Oprit de tine.'; saveJobs(); renderJobs(); } } }
+async function jobDetails(id){
+  const j = jobs.find(x => x.id === id); if(!j || !j.taskUUID) return;
+  sheet('<h2>Detalii de la Runware</h2><p class="muted">Cer detaliile…</p>');
+  let det; try{ det = await rwDetails(j.taskUUID); }catch(e){ det = {state:'necunoscut', msg:e.message}; }
+  const r = JOB_RW[j.id] || {}, q = det.req || {};
+  sheet(`<h2>Detalii de la Runware</h2>
+    <div class="info"><div><b>Stare:</b> ${esc({gata:'gata', eroare:'eroare', lucru:'în lucru', necunoscut:'necunoscută'}[det.state] || det.state)} — ${esc(det.msg || '')}</div>
+    <div><b>Cerere:</b> ${esc(q.model || j.mk)} · ${esc(q.resolution || j.res)} · ${esc(q.duration || j.sec)} s</div>
+    <div class="muted">Cod: <span class="mono">${esc(j.taskUUID)}</span></div>
+    ${r.raw ? `<details><summary>Ultimul răspuns la verificare</summary><p class="mono">${esc(r.raw)}</p></details>` : ''}</div>
+    ${det.state === 'gata' ? '<p class="ok">Clipul e gata la Runware: aplicația îl preia la următoarea verificare.</p>' : ''}`);
+  if(det.state === 'gata' || det.state === 'eroare'){
+    const ac = JOB_AC[id];
+    if(det.state === 'gata'){ if(ac){ j.stopGot = det.item; ac.abort(); } else { j.err = ''; j.state = 'lucru'; renderJobs(); runJob(j, false, det.item); } }
+    else { j.stopWhy = 'Runware: ' + det.msg; if(ac) ac.abort(); else { j.state = 'eroare'; j.err = j.stopWhy; delete j.stopWhy; await saveJobs(); renderJobs(); } }
+  }
 }
 function renderJobs(){ const el = $('#cJobs'); if(!el) return; el.innerHTML = jobs.length ? '<h3>În lucru</h3>' + jobs.map(jobHTML).join('') : ''; }
 function updJob(j){ const el = document.getElementById('job-' + j.id); if(el) el.outerHTML = jobHTML(j); }

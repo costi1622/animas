@@ -59,23 +59,49 @@ async function rwSend(task, signal){
     catch(e){ if(!e.busy || t >= 3) throw e; await sleep([3000, 6000, 12000][t]); }
   }
 }
-// întreabă până e gata; onTick(secunde) pentru progres. Rezultatul: elementul din data
-async function rwWait(taskUUID, kind, {signal, onTick, maxMs = 20 * 60e3} = {}){
-  const t0 = Date.now(); let net = 0;
+// întreabă până e gata. onStatus({st, raw, det}) după fiecare răspuns (ce spune Runware, pentru card și „Detalii”).
+// 1.0.1: erorile din lista „errors” se citesc și când lista „data” nu e goală; la clipuri, după 4 minute, la fiecare 2 minute
+// se cer și detaliile sarcinii (getTaskDetails): dacă acolo e deja rezultatul sau eroarea, se folosește de acolo.
+async function rwWait(taskUUID, kind, {signal, onTick, onStatus, maxMs = 20 * 60e3} = {}){
+  const t0 = Date.now(); let net = 0, lastDet = 0;
   for(let i = 0; ; i++){
     await sleep(i ? (kind === 'video' ? 5000 : 1500) : (kind === 'video' ? 8000 : 2000));
     if(signal && signal.aborted) throw new DOMException('Oprit', 'AbortError');
     if(onTick) onTick(Math.round((Date.now() - t0) / 1000));
     let d;
     try{ d = await rwPost([{taskType:'getResponse', taskUUID}], signal); net = 0; }
-    catch(e){ if(e.name === 'AbortError') throw e; if((e.net || e.busy) && ++net < 60) continue; throw e; }
-    const L = (d.data || []).filter(x => x && (!x.taskUUID || x.taskUUID === taskUUID));
+    catch(e){ if(e.name === 'AbortError') throw e; if((e.net || e.busy) && ++net < 60){ if(onStatus) onStatus({st:'rețea: ' + e.message.slice(0, 80)}); continue; } throw e; }
+    const mine = x => x && (!x.taskUUID || x.taskUUID === taskUUID);
+    const E = (d.errors || []).filter(mine);
+    if(E.length) throw new Error('Runware: ' + String(E[0].message || E[0].code || 'eroare').slice(0, 220));
+    const L = (d.data || []).filter(mine);
+    if(onStatus) onStatus({st:L.map(x => x.status || (x.videoURL || x.imageURL ? 'gata' : '?')).join(', ') || 'fără răspuns', raw:JSON.stringify(d).slice(0, 600)});
     const bad = L.find(x => x.status === 'error');
     if(bad) throw new Error('Runware: ' + String(bad.message || bad.error || (kind === 'video' ? 'clipul n-a ieșit' : 'poza n-a ieșit')).slice(0, 220));
-    const ok = L.find(x => x.videoURL || x.imageURL || x.imageBase64Data || x.status === 'success');
-    if(ok && (ok.videoURL || ok.imageURL || ok.imageBase64Data)) return ok;
+    const ok = L.find(x => x.videoURL || x.imageURL || x.imageBase64Data);
+    if(ok) return ok;
+    if(kind === 'video' && Date.now() - t0 > 4 * 60e3 && Date.now() - lastDet > 2 * 60e3){
+      lastDet = Date.now();
+      const det = await rwDetails(taskUUID, signal).catch(e => ({state:'necunoscut', msg:e.message}));
+      if(onStatus) onStatus({det});
+      if(det.state === 'eroare') throw new Error('Runware: ' + det.msg);
+      if(det.state === 'gata' && det.item) return det.item;
+    }
     if(Date.now() - t0 > maxMs) throw new Error('Runware: durează prea mult. Clipul rămâne în „În lucru”; încearcă din nou mai târziu.');
   }
+}
+// detaliile unei sarcini trimise (cererea originală + răspunsul): {state:'gata'|'eroare'|'lucru'|'necunoscut', msg, item, req}
+async function rwDetails(taskUUID, signal){
+  let d;
+  try{ d = await rwPost([{taskType:'getTaskDetails', taskUUID}], signal); }
+  catch(e){ if(e.notFound) return {state:'necunoscut', msg:'Runware nu are această sarcină.'}; throw e; }
+  const x = (d.data || []).find(y => y && y.taskUUID === taskUUID) || (d.data || [])[0];
+  if(!x) return {state:'necunoscut', msg:'Runware n-a întors detalii.'};
+  const req = Array.isArray(x.request) ? x.request[0] : x.request, r = x.response || {};
+  if(r.errors && r.errors.length){ const e0 = r.errors[0]; return {state:'eroare', msg:String(e0.message || e0.code || 'eroare').slice(0, 220), req}; }
+  const item = (r.data || []).find(y => y && (y.videoURL || y.imageURL));
+  if(item) return {state:'gata', msg:'gata', item, req};
+  return {state:'lucru', msg:'încă în lucru la Runware', req};
 }
 async function fetchBlob(u, type){
   for(let k = 0; k < 5; k++){
