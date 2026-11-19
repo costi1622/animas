@@ -128,10 +128,18 @@ function kleinTask(prompt, refs, w, h){
     width:w, height:h, numberResults:1, outputType:'URL', outputFormat:'JPG', outputQuality:94, acceleration:'none',
     seed:Math.floor(Math.random() * 4294967295), ...(refs.length ? {inputs:{referenceImages:refs}} : {})};
 }
+// 1.2: limita Runware pentru positivePrompt (2.000 de caractere): verificată înainte de trimitere, fără tăieri pe ascuns
+// (1.0–1.1 tăia la 2.500, peste limită, și putea pierde ultimul pas sau regula de final)
+function checkLen(prompt){
+  const t = String(prompt || '').trim();
+  if(!t) throw new Error('Promptul e gol.');
+  if(t.length > PROMPT_MAX) throw new Error(`Promptul are ${t.length} caractere; Runware primește cel mult ${PROMPT_MAX}. Scurtează-l (sau lasă-l pe Claude să-l refacă).`);
+  return t;
+}
 // sarcina video din poza de start
 async function videoTask({mk, res, sec, audio, draft, prompt, start}){
   const m = MODELE[mk];
-  const t = {taskType:'videoInference', taskUUID:crypto.randomUUID(), model:m.id, positivePrompt:String(prompt).slice(0, 2500),
+  const t = {taskType:'videoInference', taskUUID:crypto.randomUUID(), model:m.id, positivePrompt:checkLen(prompt),
     duration:sec, numberResults:1, outputType:'URL', outputFormat:'MP4',
     inputs:{frameImages:[{image:await dataUri(start, 1280, .92), frame:'first'}]}};
   if(m.size === 'resolution') t.resolution = res;

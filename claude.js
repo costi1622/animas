@@ -27,51 +27,60 @@ function jsonOut(t){
 }
 const imgBlock = async (b, px = 1024) => ({type:'image', source:{type:'base64', media_type:'image/jpeg', data:await b64(await toJpeg(b, px, .88))}});
 
-/* 1.1: fidelitatea față de ce ai scris. Claude face întâi PLANUL pe secunde (fiecare acțiune vizibilă, în ordinea ta, cu toate
-   detaliile: mâna, stânga/dreapta, de câte ori, încotro privește, ce spune), apoi scrie promptul din plan: o linie pe pas, cu
-   intervalul de timp, plus regula „doar acești pași, în ordinea asta, fiecare dus până la capăt”. Dacă pașii nu încap realist
-   în durata aleasă, spune și propune durata potrivită. */
-const SYS_PLAN = `You turn the user's request (written in Romanian) into a precise, timed action plan for an image-to-video model, then write the video prompt from that plan. The person in the start photo must do EXACTLY what the user asked: every requested action, in the requested order, each clearly visible and completed. Nothing missing, nothing added.
+/* 1.2: Claude nu mai scrie promptul liber. Dă PLANUL structurat (scena, ce se vede în poza de start, pașii pe secunde cu
+   fazele fiecăruia, camera, sunetul); promptul îl asamblează aplicația (prompt.js), pe strategia fiecărui model și sub
+   limita de 2.000 de caractere. Așa nicio cerință nu se pierde la tăiere și fiecare model primește forma care îi convine. */
+const SYS_PLAN = `You turn the user's request (written in Romanian) into a precise, timed action plan for an image-to-video model. The app builds the final video prompt from your JSON, so write each field as plain English the video model will read. The person in the start photo must do EXACTLY what the user asked: every requested action, in order, each clearly visible and completed. Nothing missing, nothing added.
 
-STEP 1 — THE PLAN
-- Split the request into atomic, visible actions (one body action each), in the user's order. Never merge two requested actions into one step and never drop one.
-- Keep every detail the user gave: which hand, left/right (from the viewer's side unless the user says otherwise), direction, distance, how many times, speed, intensity, where the person looks, facial expression, exact spoken words.
-- Turn feelings or vague wishes into concrete visible motion (e.g. "e fericită" → "smiles broadly, eyes narrowing with the smile").
-- Do not invent actions. Natural micro-motion (breathing, blinking, hair and fabric moving) is allowed but is never a step.
-- The first step starts from the exact pose in the start photo; if it needs a transition (e.g. she is sitting and must walk), add that transition as its own step.
-- Give each step a time window inside [0, D] seconds with realistic durations: a glance 0.5–1 s, a head turn ~1 s, a smile ~1 s, hand to hair ~1.5 s, standing up ~2 s, a few walking steps 2–3 s, speech ~1 s per 3 words. Leave ~0.5 s at the end to settle. Windows follow each other in order; they may overlap only when the user asked for simultaneous actions ("while", "în timp ce").
-- If the steps cannot fit realistically in D seconds, set "fits": false and "secSuggest" to the smallest allowed duration that fits (allowed durations are listed below), and still plan them as well as possible inside D.
+THE STEPS
+- Split the request into visible actions, in the user's order. Never merge two requested actions and never drop one.
+- Keep every detail: which hand, left/right (viewer's side unless the user says otherwise), direction, distance, how many times, speed, intensity, gaze, expression, exact spoken words.
+- Turn feelings into visible motion ("e fericită" → "smiles broadly, eyes narrowing with the smile").
+- An action with an object or a garment is described through its physical phases in "phases" (2–5 short clauses): reach, grip (which hand, where), the movement itself, release, return to rest. Example "își pune geaca": ["takes the jacket from the chair with her right hand", "slides her left arm into the left sleeve", "swings the jacket behind her back and finds the right sleeve", "pulls it onto her shoulders and straightens the collar"]. A simple action (a glance, a smile) has no phases.
+- Movement must look human: say what the shoulders, torso and weight do when the arms move; transitions are smooth; the body never freezes between steps and never jerks.
+- Do not invent actions. Breathing, blinking, hair and fabric movement are allowed but are not steps.
+- The first step starts from the exact pose in the start photo; add a transition step if needed (sitting → standing before walking).
+- Time windows inside [0, D] with realistic durations: glance 0.5–1 s, head turn ~1 s, smile ~1 s, hand to hair ~1.5 s, standing up ~2 s, a few steps 2–3 s, putting on a jacket 3–4 s, speech ~1 s per 3 words. Leave ~0.5 s to settle at the end. Windows follow each other; overlap only for simultaneous actions ("în timp ce").
+- At most one step per ~1.5 s of clip. If the steps cannot fit realistically in D seconds, set "fits": false and "secSuggest" to the smallest allowed duration that fits (listed below), and still plan them as well as possible inside D.
+- Keep each "en" under 160 characters and each phase under 90 characters.
 
-STEP 2 — THE VIDEO PROMPT (English)
-Line 1: "Single continuous shot starting exactly from the first frame: <who and where, in a few words>. Same person, same face, same hair, same body, same clothes, same place throughout."
-Then one line per step: "[a–b s] <the action, with body part, direction, speed and end position>."
-Then "Camera: <static, or the movement the user asked for>."
-MODEL_LINES
-Last line: "Perform only these actions, in this exact order, each one clearly visible and fully completed. No cuts, no scene change, no extra people, no extra gestures. Photorealistic real footage, natural human motion, correct anatomy."
+THE BODY
+- "visible": in at most 40 words, what the first frame actually shows about the person: build (e.g. slim, athletic, curvy), height impression, shoulder width, hair length and style, the clothes and how they fit, pose. Describe only what is visible; never guess what clothes hide.
+- Nothing in the plan may change the body: no reshaping, no growing or shrinking any part. Clothes stay on the person; only an outer layer (jacket, coat, scarf, hat, gloves) may be taken off or put on. If the user asks to undress beyond an outer layer, leave that part out and say so in "nota".
 
-Only adults. If the request involves a minor or someone who looks like a child, refuse: leave "video" empty and "steps" empty, and explain in "nota".
+THE REST
+- "scene": one short sentence: who and where (e.g. "A young woman in a sunny kitchen").
+- "camera": static, or the camera move the user asked for; handheld phone feel only if asked.
+- "sound": ambient sound of the place. "speech": the exact words she says, in quotes, in the user's language, or "".
+- Only adults. If the request involves a minor or someone who looks like a child, refuse: leave "steps" empty and explain in "nota".
 Answer ONLY with JSON:
-{"steps":[{"t0":0,"t1":1.5,"ro":"step in Romanian, short","en":"step in English"}],"fits":true,"secSuggest":null,"video":"…","nota":"one short line in Romanian: what you understood and anything you could not include"}`;
-const MODEL_LINES = {
-  kling4f:'Then "Audio: <ambient sound of the place; any spoken words in quotes, in the language the user wrote them>; no subtitles, no background music." (Kling always generates sound; add music only if the user asked.)',
-  kling4:'Then "Audio: <ambient sound of the place; any spoken words in quotes, in the language the user wrote them>; no subtitles, no background music." (Kling always generates sound; add music only if the user asked.)',
-  veo31:'If sound is on: then "Audio: <ambient sound; spoken words in quotes, in the language the user wrote them>; no music unless asked."',
-  veo31f:'If sound is on: then "Audio: <ambient sound; spoken words in quotes, in the language the user wrote them>; no music unless asked."',
-  seed25:'If sound is on: then "Audio: <ambient sound; spoken words in quotes>."',
-  pvideo2:'No audio line.'
+{"scene":"…","visible":"…","steps":[{"t0":0,"t1":1.5,"ro":"pasul pe scurt, în română","en":"the step in English","phases":[]}],"camera":"…","sound":"…","speech":"","fits":true,"secSuggest":null,"nota":"one short line in Romanian: what you understood and anything you left out"}`;
+// cât încape într-un clip, pe model (planul are nevoie de timp; modelele mici duc mai puțini pași)
+const MODEL_PLAN = {
+  kling4f:'Kling 4.0 Flash (720p): follows a timeline well; at most 1 step per 1.5 s.',
+  kling4:'Kling 4.0: follows a timeline and keyframes well; at most 1 step per 1.5 s.',
+  veo31:'Veo 3.1 (4–8 s): cinematic, best with 2–4 steps; prefer fewer, fuller actions.',
+  veo31f:'Veo 3.1 Fast (4–8 s): best with 2–4 steps; prefer fewer, fuller actions.',
+  seed25:'Seedance 2.5: strong at long sequences of actions in order; at most 1 step per 1.5 s.',
+  pvideo2:'P-Video-2 (draft model, 4–8 s): keep to 1–3 simple steps, no phases longer than 2 clauses.'
 };
-// planul + promptul video din textul tău și poza de start; missing = pașii pe care o încercare anterioară nu i-a arătat
+// planul + promptul video (asamblat în prompt.js) din textul tău și poza de start; missing = pașii pe care o încercare anterioară nu i-a arătat
 async function clVideoPrompt({text, start, mk, sec, audio, persona, missing}, signal){
   const m = MODELE[mk] || {dur:[sec]};
-  const sys = SYS_PLAN.replace('MODEL_LINES', MODEL_LINES[mk] || '')
-    + `\n\nModel: ${(MODELE[mk] || {}).nume || mk}. D = ${sec} seconds. Allowed durations: ${m.dur.join(', ')} seconds.` + (audio ? ' Sound is on.' : ' Sound is off: no audio line, no speech.');
+  const sys = SYS_PLAN + `\n\nModel: ${(MODELE[mk] || {}).nume || mk}. ${MODEL_PLAN[mk] || ''} D = ${sec} seconds. Allowed durations: ${m.dur.join(', ')} seconds.` + (audio ? ' Sound is on.' : ' Sound is off: "sound" and "speech" empty.');
   const content = [await imgBlock(start), {type:'text', text:(persona ? 'Person (description): ' + persona + '\n' : '') + 'What should happen (Romanian): ' + text
     + (missing && missing.length ? '\n\nA previous clip with this request did NOT show these steps clearly: ' + missing.join('; ') + '. Give them enough time and make them unmistakable, without dropping the other steps.' : '')}];
   const {text:t, usd} = await claudeCall(sys, content, {signal, max:2000});
   const j = jsonOut(t);
-  const steps = (Array.isArray(j.steps) ? j.steps : []).map(x => ({t0:Math.max(0, +x.t0 || 0), t1:Math.min(sec, +x.t1 || sec), ro:String(x.ro || '').trim(), en:String(x.en || '').trim()})).filter(x => x.ro || x.en);
-  const sug = +j.secSuggest;
-  return {video:String(j.video || '').trim(), nota:String(j.nota || '').trim(), steps, fits:j.fits !== false, secSuggest:m.dur.includes(sug) ? sug : null, usd};
+  const steps = (Array.isArray(j.steps) ? j.steps : []).map(x => ({t0:Math.max(0, +x.t0 || 0), t1:Math.min(sec, +x.t1 || sec), ro:String(x.ro || '').trim(), en:String(x.en || '').trim(),
+    phases:(Array.isArray(x.phases) ? x.phases : []).map(y => String(y).trim()).filter(Boolean).slice(0, 5)})).filter(x => x.ro || x.en);
+  const plan = {scene:String(j.scene || '').trim(), visible:String(j.visible || '').trim(), steps, camera:String(j.camera || '').trim(),
+    sound:audio ? String(j.sound || '').trim() : '', speech:audio ? String(j.speech || '').trim() : ''};
+  const sug = +j.secSuggest, nota = String(j.nota || '').trim();
+  if(!steps.length) return {video:'', nota, steps, fits:true, secSuggest:null, usd, plan};
+  const f = fitPrompt(mk, plan, {audio, sec});
+  if(f.over) throw new Error(`Pașii singuri au peste ${PROMPT_MAX} de caractere pentru model: scurtează textul sau împarte acțiunea în două clipuri.`);
+  return {video:f.text, nota:nota + (f.level ? ` · prompt compactat (nivel ${f.level}), toți pașii păstrați` : ''), steps, fits:j.fits !== false, secSuggest:m.dur.includes(sug) ? sug : null, usd, plan, level:f.level};
 }
 /* 1.1: verificarea pașilor în clip: Claude vede 8 cadre (cu secunda fiecăruia) și spune pentru fiecare pas da / parțial / nu / nesigur */
 async function clCheckSteps(steps, frames, signal){

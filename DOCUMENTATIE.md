@@ -1,6 +1,6 @@
 # Animas — documentație
 
-Versiunea **1.1** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
+Versiunea **1.2** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
 Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · publicare: arhiva ZIP urcată în rădăcina repo-ului, workflow-ul `publica.yml` o dezarhivează și o publică pe GitHub Pages.
 
 ## Principii
@@ -16,7 +16,8 @@ Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · public
 | `index.html` | ecranele și stilul |
 | `app.js` | fluxul (Creează, Galerie, Personaje, Setări), lucrările, importul din Taifas, costurile |
 | `runware.js` | modelele video cu prețuri, sarcinile asincrone, poza de start (FLUX.2 klein 9B) |
-| `claude.js` | promptul video, promptul pozei, descrierea personajului |
+| `claude.js` | planul video structurat, verificarea pașilor, promptul pozei, descrierea personajului |
+| `prompt.js` | 1.2: asamblarea promptului video pe strategia fiecărui model, limita de 2.000 de caractere, compactarea fără pierderi de pași |
 | `face.js` | face-api (fața + 68 de puncte + vârsta) și ArcFace (amprenta de 512 numere) |
 | `sw.js`, `manifest.webmanifest`, `icon*` | instalare ca aplicație, funcționare fără rețea pentru ecrane |
 | `vendor/` | face-api, ONNX Runtime Web, ArcFace (bucăți de cel mult 5 MB) |
@@ -34,6 +35,14 @@ Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · public
 Cererea video: `inputs.frameImages:[{image, frame:'first'}]` = poza de start (decupată în telefon la formatul ales). Mărimea: Kling Flash urmează poza; celelalte primesc `resolution`. Veo: `providerSettings.google.generateAudio`; Seedance: `settings.audio`; P-Video-2: `settings.draft`.
 Toate sarcinile sunt `deliveryMethod:'async'` + `includeCost:true`; aplicația întreabă cu `getResponse`. Costul real din răspuns intră în totaluri; fără el, se folosește estimarea.
 
+## Promptul video (1.2)
+Claude nu mai scrie promptul liber: dă planul în JSON (`scene`, `visible` = ce se vede în poza de start despre corp, păr, haine, `steps` cu `t0/t1/ro/en/phases`, `camera`, `sound`, `speech`). `prompt.js` îl asamblează:
+- linia de start a modelului; scena; ce se vede în poza de start; păstrarea identității și a proporțiilor (fără a rigidiza mișcarea); un rând pe pas `[a–b s] acțiunea: faza 1, then faza 2…`; camera; mișcarea naturală (umeri, trunchi, greutate, haine, păr); sunetul; regula de final.
+- Strategii: Kling 4.0 Flash pornește cu `<<<image_1>>>` (forma din exemplul Runware), Kling are mereu sunet („no background music, no subtitles”); Veo: limbaj cinematic, sunet doar dacă e pornit, 2–4 pași; Seedance: pașii „unul după altul, în ordinea asta”; P-Video-2: scurt (≤ 700), „First…, then…, finally…”, fără secunde.
+- Bugete: Kling Flash 1.700, Kling 4.0 1.800, Veo 1.500, Veo Fast 1.400, Seedance 1.800, P-Video-2 700; limita Runware 2.000. Compactare pe niveluri (mișcarea scurtă → identitatea scurtă → fără „ce se vede” → regula scurtă → fazele comprimate → fără cameră); pașii nu se scot niciodată. Dacă pașii singuri depășesc 2.000, aplicația oprește și cere text mai scurt.
+- Limita se verifică înainte de trimitere (`checkLen`); 1.0–1.1 tăiau la 2.500 (peste limită). Promptul editat de tine se trimite neschimbat, cu contor de caractere; peste 2.000 nu se trimite.
+- Hainele: se pot pune sau scoate doar straturi exterioare (geacă, palton, eșarfă, căciulă, mănuși).
+
 ## Fluxul
 1. **Personaj** (din Taifas sau nou) → **poza de start**: profilul, o poză urcată sau o scenă generată (Claude scrie promptul, FLUX.2 klein 9B cu poza de profil + portretul de aproape ca repere). Poza se decupează la 9:16 / 16:9 / 1:1 cu fața în cadru, iar fața se măsoară (ArcFace, ≥ 64% = aceeași persoană).
 2. **Ce face** (în română) → **1.1: planul pe secunde.** Claude (vede poza de start) împarte textul în acțiuni vizibile, în ordinea ta, fără să lipsească sau să adauge ceva, păstrând toate detaliile (mâna, stânga/dreapta, de câte ori, încotro privește, ce spune), și dă fiecăreia un interval realist. Dacă nu încap în durata aleasă, spune și propune durata („Pune 8 s” refă planul). Promptul pentru model se scrie din plan: o linie de context („aceeași persoană, același loc, un singur cadru continuu”), o linie pe pas `[a–b s] acțiunea`, camera, sunetul (Kling: mereu, cu „no subtitles, no background music”), și regula finală „doar acești pași, în ordinea asta, fiecare dus până la capăt; fără tăieturi, fără gesturi în plus”. Planul se vede în română în Creează. Promptul se poate modifica; dacă schimbi textul sau setările, se rescrie singur la trimitere (dacă nu l-ai modificat tu).
@@ -46,12 +55,13 @@ Toate sarcinile sunt `deliveryMethod:'async'` + `includeCost:true`; aplicația �
 Taifas și Animas sunt pe aceeași adresă (`costi1622.github.io`), deci în același Chrome văd aceeași memorie a telefonului. Animas **doar citește** baza `taifas2` (personajele, pozele, cheile); dacă Taifas nu există în acel browser, deschiderea e anulată ca să nu creeze o bază goală care l-ar strica. Se copiază: numele, poza de profil, portretul de aproape (`closeRef`), poza întreagă (`photoFull`), descrierea fizică (`physEn`), și al doilea personaj din duo-uri. Reimportul actualizează, nu dublează. Cheile se preiau doar dacă sunt în telefon (nu din seiful Worker).
 
 ## Teste
-`test-animas-100.py` (Playwright, Claude și Runware simulate): 89 de verificări — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
+`test-animas-100.py` (Playwright, Claude și Runware simulate): 105 verificări în browser + `test-prompt-120.js` (Node, 41 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
 Rulare: `python3 test-animas-100.py <dosarul animas>` (lângă el: `fata.jpg`, `corp.jpg`, `clip.webm`).
 
 ## Istoric
 | Versiune | Data | Ce |
 | --- | --- | --- |
+| 1.2 | 20.11.2026 | promptul asamblat în aplicație pe strategia fiecărui model, din planul structurat; limita de 2.000 verificată (nu tăiere la 2.500); fazele acțiunilor complexe; corpul ancorat pe ce se vede; mișcare naturală; contor de caractere |
 | 1.1 | 20.11.2026 | fidelitatea față de text: planul pe secunde, promptul scris din plan, verificarea pașilor în clip, refacerea cu pașii lipsă accentuați; $0,00 în loc de $0,000 |
 | 1.0.2 | 20.11.2026 | creditul insuficient la Runware: mesaj clar, „Reia” trimite din nou cererea eșuată |
 | 1.0.1 | 19.11.2026 | clipul care nu se mai termina: ce spune Runware pe card, erorile citite din orice răspuns, detaliile sarcinii, „Renunță”, „Detalii”, avertizare la 10 min |

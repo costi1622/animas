@@ -106,7 +106,7 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
     <section class="box"><h3>Ce face</h3>
       <textarea id="cText" rows="4" placeholder="ex.: se uită spre cameră, zâmbește, își dă părul după ureche și face un pas spre mine" oninput="onText(this.value)"></textarea>
       <div class="row"><button class="sm ghost" id="btnPrep" onclick="btnPrepare()">Pregătește promptul</button><span class="muted">Claude îl scrie pentru model și se uită la poză.</span></div>
-      <div id="pBox" hidden><div id="pSteps"></div><label>Promptul pentru model (îl poți modifica)<textarea id="pText" rows="6" class="mono" oninput="onPromptEdit(this.value)"></textarea></label><div class="muted" id="pNota"></div></div>
+      <div id="pBox" hidden><div id="pSteps"></div><label>Promptul pentru model (îl poți modifica)<textarea id="pText" rows="8" class="mono" oninput="onPromptEdit(this.value)"></textarea></label><div class="muted" id="pLen"></div><div class="muted" id="pNota"></div></div>
     </section>
     <section class="box"><h3>Clipul</h3>
       <label>Model<select id="oModel" onchange="setOpt('mk', this.value)"></select></label>
@@ -160,6 +160,7 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
 </nav>
 <div id="sheetBg" hidden onclick="if(event.target === this) closeSheet()"><div id="sheet"></div></div>
 <div id="toast"></div>
+<script src="prompt.js"></script>
 <script src="runware.js"></script>
 <script src="claude.js"></script>
 <script src="face.js"></script>

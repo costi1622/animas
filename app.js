@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.1';
+const APP_VER = '1.2';
 
 /* ───────── utilitare ───────── */
 const $ = s => document.querySelector(s);
@@ -169,6 +169,7 @@ function renderPrompt(){
   $('#cText').value = C.text;
   const has = !!C.prompt, stale = has && !C.edited && C.promptKey !== promptKey() && C.promptKey !== promptKey(SCHITA.model);
   $('#pBox').hidden = !has;
+  if(has) renderLen();
   if(has){ $('#pText').value = C.prompt; $('#pNota').textContent = (C.nota || '') + (stale ? ' (se rescrie la trimitere: s-au schimbat textul sau setările)' : ''); }
   // 1.1: planul pe secunde, cum îl va juca modelul
   const ps = $('#pSteps');
@@ -179,7 +180,9 @@ function renderPrompt(){
 const fmtS = v => String(Math.round(v * 10) / 10).replace('.', ',');
 async function useSuggest(){ if(!C.secSuggest) return; setOpt('sec', C.secSuggest); const b = $('#btnPrep'); b.disabled = true; b.textContent = 'Claude refă planul…'; try{ await preparePrompt(); }catch(e){ toast(e.message, 6000); } finally{ b.disabled = false; b.textContent = 'Pregătește promptul'; } }
 function onText(v){ C.text = v; C.missing = null; }
-function onPromptEdit(v){ C.prompt = v; C.edited = true; }
+function onPromptEdit(v){ C.prompt = v; C.edited = true; renderLen(); }
+// 1.2: câte caractere are promptul (Runware: cel mult 2.000)
+function renderLen(){ const el = $('#pLen'); if(!el) return; const n = String(C.prompt || '').trim().length; el.className = n > PROMPT_MAX ? 'errtxt' : 'muted'; el.textContent = `${n.toLocaleString('ro-RO')} / ${PROMPT_MAX.toLocaleString('ro-RO')} caractere` + (n > PROMPT_MAX ? ' — prea lung: Runware nu-l primește. Scurtează-l.' : ''); }
 async function preparePrompt(mk = S.mk, sec = +S.sec, audio = S.audio){
   if(!C.start) throw new Error('Alege întâi poza de start.');
   if(!C.text.trim()) throw new Error('Scrie ce să facă personajul.');
@@ -198,6 +201,7 @@ async function send(final){
   try{
     const tmk = final ? S.mk : SCHITA.model;
     if(!C.prompt || (!C.edited && C.promptKey !== promptKey(tmk))){ btn.textContent = 'Claude scrie promptul…'; await preparePrompt(tmk); }
+    if(String(C.prompt).trim().length > PROMPT_MAX) throw new Error(`Promptul are ${String(C.prompt).trim().length} caractere; Runware primește cel mult ${PROMPT_MAX}. Scurtează-l sau șterge-l ca să-l refacă Claude.`);
     const mk = final ? S.mk : SCHITA.model, m = MODELE[mk];
     const p = {mk, res:final ? S.res : SCHITA.res, sec:final ? +S.sec : Math.min(8, Math.max(4, +S.sec)), audio:final ? (m.audio === 'always' || (m.audio === 'switch' && !!S.audio)) : false, draft:!final, aspect:S.aspect};
     const est = costClip(p.mk, p.res, p.sec, p.audio, p.draft);
