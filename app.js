@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.0.1';
+const APP_VER = '1.0.2';
 
 /* ───────── utilitare ───────── */
 const $ = s => document.querySelector(s);
@@ -211,7 +211,8 @@ async function runJob(job, resume, got){
       const start = await DB.get(job.start); if(!start) throw new Error('Poza de start lipsește.');
       const task = await videoTask({mk:job.mk, res:job.res, sec:job.sec, audio:job.audio, draft:job.draft, prompt:job.prompt, start});
       job.taskUUID = task.taskUUID; job.state = 'trimis'; await saveJobs();
-      await rwSend(task);
+      try{ await rwSend(task); }
+      catch(e){ if(!e.net) delete job.taskUUID; if(!e.net && /insufficient|balance/i.test(e.message)) throw rwFail(e.message.replace(/^Runware:\s*/, '').replace(/\s*\(reîncarcă[^)]*\)$/, '')); throw e; }   // 1.0.2: refuzată la trimitere = n-a pornit
     }
     job.state = 'lucru'; await saveJobs(); renderJobs();
     const ac = new AbortController(); JOB_AC[job.id] = ac;
@@ -245,6 +246,8 @@ async function runJob(job, resume, got){
     }
     // Runware nu știe de sarcină = n-a ajuns la ei: „Reia” o trimite din nou (nu se plătește de două ori)
     if(e.notFound && job.taskUUID){ delete job.taskUUID; e = new Error('Clipul n-a ajuns la Runware. Apasă „Reia” ca să-l trimiți din nou.'); }
+    if(e.taskFailed && !e.credit && /insufficient|balance/i.test(e.message)) e = rwFail(e.message.replace(/^Runware:\s*/, '').replace(/\s*\(reîncarcă[^)]*\)$/, ''));
+    if(e.taskFailed) delete job.taskUUID;   // 1.0.2: eșuată la Runware (neplătită): „Reia” o trimite din nou, nu mai întreabă de cea eșuată
     job.state = 'eroare'; job.err = String(e.message || e).slice(0, 300); await saveJobs(); renderJobs();
   }
 }
@@ -281,12 +284,12 @@ async function jobDetails(id){
   if(det.state === 'gata' || det.state === 'eroare'){
     const ac = JOB_AC[id];
     if(det.state === 'gata'){ if(ac){ j.stopGot = det.item; ac.abort(); } else { j.err = ''; j.state = 'lucru'; renderJobs(); runJob(j, false, det.item); } }
-    else { j.stopWhy = 'Runware: ' + det.msg; if(ac) ac.abort(); else { j.state = 'eroare'; j.err = j.stopWhy; delete j.stopWhy; await saveJobs(); renderJobs(); } }
+    else { j.stopWhy = rwFail(det.msg).message; delete j.taskUUID; if(ac) ac.abort(); else { j.state = 'eroare'; j.err = j.stopWhy; delete j.stopWhy; await saveJobs(); renderJobs(); } }
   }
 }
 function renderJobs(){ const el = $('#cJobs'); if(!el) return; el.innerHTML = jobs.length ? '<h3>În lucru</h3>' + jobs.map(jobHTML).join('') : ''; }
 function updJob(j){ const el = document.getElementById('job-' + j.id); if(el) el.outerHTML = jobHTML(j); }
-async function retryJob(id){ const j = jobs.find(x => x.id === id); if(!j) return; const hadTask = !!j.taskUUID; j.err = ''; j.state = hadTask ? 'lucru' : 'trimit'; j.at = Date.now(); await saveJobs(); renderJobs(); runJob(j, false); }
+async function retryJob(id){ const j = jobs.find(x => x.id === id); if(!j) return; if(j.taskUUID && /^(Runware:|Credit insuficient)/.test(j.err || '')) delete j.taskUUID;   /* 1.0.2: eșuată la Runware: se trimite din nou */ const hadTask = !!j.taskUUID; j.err = ''; j.state = hadTask ? 'lucru' : 'trimit'; j.at = Date.now(); await saveJobs(); renderJobs(); runJob(j, false); }
 async function dropJob(id){ jobs = jobs.filter(x => x.id !== id); await saveJobs(); renderJobs(); }
 function renderLast(){
   const el = $('#cLast'); if(!el) return; const x = clips[0];

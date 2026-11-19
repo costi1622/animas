@@ -1,5 +1,5 @@
 /* Animas: aplicația merge și fără rețea pentru ecrane; cererile spre Claude și Runware merg mereu la rețea. */
-const CACHE = 'animas-v2';
+const CACHE = 'animas-v3';
 const CORE = ['./', 'index.html', 'app.js', 'runware.js', 'claude.js', 'face.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'fonts/pjs-latin.woff2', 'fonts/pjs-latin-ext.woff2'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('animas-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

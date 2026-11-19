@@ -70,25 +70,35 @@ async function rwWait(taskUUID, kind, {signal, onTick, onStatus, maxMs = 20 * 60
     if(onTick) onTick(Math.round((Date.now() - t0) / 1000));
     let d;
     try{ d = await rwPost([{taskType:'getResponse', taskUUID}], signal); net = 0; }
-    catch(e){ if(e.name === 'AbortError') throw e; if((e.net || e.busy) && ++net < 60){ if(onStatus) onStatus({st:'rețea: ' + e.message.slice(0, 80)}); continue; } throw e; }
+    catch(e){ if(e.name === 'AbortError') throw e; if(!e.net && !e.busy && !e.notFound) e.taskFailed = true; if((e.net || e.busy) && ++net < 60){ if(onStatus) onStatus({st:'rețea: ' + e.message.slice(0, 80)}); continue; } throw e; }
     const mine = x => x && (!x.taskUUID || x.taskUUID === taskUUID);
     const E = (d.errors || []).filter(mine);
-    if(E.length) throw new Error('Runware: ' + String(E[0].message || E[0].code || 'eroare').slice(0, 220));
+    if(E.length) throw rwFail(E[0].message || E[0].code || 'eroare');
     const L = (d.data || []).filter(mine);
     if(onStatus) onStatus({st:L.map(x => x.status || (x.videoURL || x.imageURL ? 'gata' : '?')).join(', ') || 'fără răspuns', raw:JSON.stringify(d).slice(0, 600)});
     const bad = L.find(x => x.status === 'error');
-    if(bad) throw new Error('Runware: ' + String(bad.message || bad.error || (kind === 'video' ? 'clipul n-a ieșit' : 'poza n-a ieșit')).slice(0, 220));
+    if(bad) throw rwFail(bad.message || bad.error || (kind === 'video' ? 'clipul n-a ieșit' : 'poza n-a ieșit'));
     const ok = L.find(x => x.videoURL || x.imageURL || x.imageBase64Data);
     if(ok) return ok;
     if(kind === 'video' && Date.now() - t0 > 4 * 60e3 && Date.now() - lastDet > 2 * 60e3){
       lastDet = Date.now();
       const det = await rwDetails(taskUUID, signal).catch(e => ({state:'necunoscut', msg:e.message}));
       if(onStatus) onStatus({det});
-      if(det.state === 'eroare') throw new Error('Runware: ' + det.msg);
+      if(det.state === 'eroare') throw rwFail(det.msg);
       if(det.state === 'gata' && det.item) return det.item;
     }
     if(Date.now() - t0 > maxMs) throw new Error('Runware: durează prea mult. Clipul rămâne în „În lucru”; încearcă din nou mai târziu.');
   }
+}
+// 1.0.2: sarcina a eșuat la Runware (nu se plătește): mesaj în română pentru creditul insuficient; „Reia” o trimite din nou
+function rwFail(msg){
+  msg = String(msg || 'eroare'); let t = 'Runware: ' + msg.slice(0, 220);
+  if(/insufficient|balance|credit/i.test(msg)){
+    const r = msg.match(/([\d.]+)\s*credits? (?:are )?(?:currently )?reserved/i), n = msg.match(/needs\s*([\d.]+)\s*credits?/i);
+    t = 'Credit insuficient în contul Runware' + (n ? `: cererea rezervă ${n[1].replace('.', ',')} $` : '') + (r ? `, iar ${r[1].replace('.', ',')} $ sunt deja rezervați pentru alte cereri în lucru` : '')
+      + '. Rezervarea e mai mare decât costul clipului și se eliberează la final. Încarcă credit sau așteaptă să se termine celelalte cereri, apoi apasă „Reia”.';
+  }
+  const e = new Error(t); e.taskFailed = true; e.credit = /insufficient|balance/i.test(msg); return e;
 }
 // detaliile unei sarcini trimise (cererea originală + răspunsul): {state:'gata'|'eroare'|'lucru'|'necunoscut', msg, item, req}
 async function rwDetails(taskUUID, signal){
