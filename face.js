@@ -112,7 +112,7 @@ async function videoFrames(blob, n = 6){
     for(let i = 0; i < n; i++){
       const t = Math.min(D - .05, D * (i + .5) / n);
       await new Promise(res => { const tm = setTimeout(res, 4000); v.addEventListener('seeked', () => { clearTimeout(tm); res(); }, {once:true}); v.currentTime = t; });
-      g.drawImage(v, 0, 0, cv.width, cv.height); const b = await cvBlob(cv, .9); if(b) out.push(b);
+      g.drawImage(v, 0, 0, cv.width, cv.height); const b = await cvBlob(cv, .9); if(b){ b.t = Math.round(t * 10) / 10; out.push(b); }
     }
     return out;
   } finally { URL.revokeObjectURL(u); try{ v.removeAttribute('src'); v.load(); }catch(e){} }

@@ -25,32 +25,64 @@ function jsonOut(t){
   const m = String(t).match(/\{[\s\S]*\}/); if(!m) throw new Error('Claude n-a întors formatul așteptat.');
   return JSON.parse(m[0]);
 }
-const imgBlock = async b => ({type:'image', source:{type:'base64', media_type:'image/jpeg', data:await b64(await toJpeg(b, 1024, .88))}});
+const imgBlock = async (b, px = 1024) => ({type:'image', source:{type:'base64', media_type:'image/jpeg', data:await b64(await toJpeg(b, px, .88))}});
 
-const MODEL_NOTE = {
-  kling4f:'Kling 4.0 Flash: describe motion and camera, not the still. Every clip has sound: end with an "Audio:" line (ambient sounds, any speech in quotes). Add "no subtitles, no background music" unless music is asked for.',
-  kling4:'Kling 4.0: describe motion and camera, not the still. Every clip has sound: end with an "Audio:" line (ambient sounds, any speech in quotes). Add "no subtitles, no background music" unless music is asked for.',
-  veo31:'Veo 3.1: cinematic, describe motion, camera and light; if sound is on, describe the sound and any spoken line in quotes.',
-  veo31f:'Veo 3.1 Fast: cinematic, describe motion, camera and light; if sound is on, describe the sound and any spoken line in quotes.',
-  seed25:'Seedance 2.5: clear sequence of actions in time order; camera movement; if sound is on, describe it.',
-  pvideo2:'P-Video-2: short, concrete motion description; no audio.'
+/* 1.1: fidelitatea față de ce ai scris. Claude face întâi PLANUL pe secunde (fiecare acțiune vizibilă, în ordinea ta, cu toate
+   detaliile: mâna, stânga/dreapta, de câte ori, încotro privește, ce spune), apoi scrie promptul din plan: o linie pe pas, cu
+   intervalul de timp, plus regula „doar acești pași, în ordinea asta, fiecare dus până la capăt”. Dacă pașii nu încap realist
+   în durata aleasă, spune și propune durata potrivită. */
+const SYS_PLAN = `You turn the user's request (written in Romanian) into a precise, timed action plan for an image-to-video model, then write the video prompt from that plan. The person in the start photo must do EXACTLY what the user asked: every requested action, in the requested order, each clearly visible and completed. Nothing missing, nothing added.
+
+STEP 1 — THE PLAN
+- Split the request into atomic, visible actions (one body action each), in the user's order. Never merge two requested actions into one step and never drop one.
+- Keep every detail the user gave: which hand, left/right (from the viewer's side unless the user says otherwise), direction, distance, how many times, speed, intensity, where the person looks, facial expression, exact spoken words.
+- Turn feelings or vague wishes into concrete visible motion (e.g. "e fericită" → "smiles broadly, eyes narrowing with the smile").
+- Do not invent actions. Natural micro-motion (breathing, blinking, hair and fabric moving) is allowed but is never a step.
+- The first step starts from the exact pose in the start photo; if it needs a transition (e.g. she is sitting and must walk), add that transition as its own step.
+- Give each step a time window inside [0, D] seconds with realistic durations: a glance 0.5–1 s, a head turn ~1 s, a smile ~1 s, hand to hair ~1.5 s, standing up ~2 s, a few walking steps 2–3 s, speech ~1 s per 3 words. Leave ~0.5 s at the end to settle. Windows follow each other in order; they may overlap only when the user asked for simultaneous actions ("while", "în timp ce").
+- If the steps cannot fit realistically in D seconds, set "fits": false and "secSuggest" to the smallest allowed duration that fits (allowed durations are listed below), and still plan them as well as possible inside D.
+
+STEP 2 — THE VIDEO PROMPT (English)
+Line 1: "Single continuous shot starting exactly from the first frame: <who and where, in a few words>. Same person, same face, same hair, same body, same clothes, same place throughout."
+Then one line per step: "[a–b s] <the action, with body part, direction, speed and end position>."
+Then "Camera: <static, or the movement the user asked for>."
+MODEL_LINES
+Last line: "Perform only these actions, in this exact order, each one clearly visible and fully completed. No cuts, no scene change, no extra people, no extra gestures. Photorealistic real footage, natural human motion, correct anatomy."
+
+Only adults. If the request involves a minor or someone who looks like a child, refuse: leave "video" empty and "steps" empty, and explain in "nota".
+Answer ONLY with JSON:
+{"steps":[{"t0":0,"t1":1.5,"ro":"step in Romanian, short","en":"step in English"}],"fits":true,"secSuggest":null,"video":"…","nota":"one short line in Romanian: what you understood and anything you could not include"}`;
+const MODEL_LINES = {
+  kling4f:'Then "Audio: <ambient sound of the place; any spoken words in quotes, in the language the user wrote them>; no subtitles, no background music." (Kling always generates sound; add music only if the user asked.)',
+  kling4:'Then "Audio: <ambient sound of the place; any spoken words in quotes, in the language the user wrote them>; no subtitles, no background music." (Kling always generates sound; add music only if the user asked.)',
+  veo31:'If sound is on: then "Audio: <ambient sound; spoken words in quotes, in the language the user wrote them>; no music unless asked."',
+  veo31f:'If sound is on: then "Audio: <ambient sound; spoken words in quotes, in the language the user wrote them>; no music unless asked."',
+  seed25:'If sound is on: then "Audio: <ambient sound; spoken words in quotes>."',
+  pvideo2:'No audio line.'
 };
-const SYS_BASE = `You write prompts for an image-to-video model in a private app. The user writes in Romanian what the person in the start photo should do.
-Rules:
-- Keep the person exactly as in the start photo: same face, hair, body, clothes, place. Never describe a different person.
-- Describe the motion in time order, natural and realistic: breathing, blinking, small weight shifts, hair and fabric moving, believable hands.
-- Camera: say how it moves (static, slow push-in, handheld phone feel) and keep it consistent.
-- Photorealistic, real footage look, natural skin texture, no beauty filter, no morphing, no extra people unless asked.
-- Only adults. If the request involves a minor or someone who looks like a child, refuse: put the reason in "nota" and leave "video" empty.
-- Write the video prompt in English, 60–160 words.
-Answer ONLY with JSON: {"video":"…","nota":"one short line in Romanian: what you understood, or what you could not do"}`;
-
-// promptul video din textul tău + poza de start
-async function clVideoPrompt({text, start, mk, sec, audio, persona}, signal){
-  const sys = SYS_BASE + '\nModel: ' + (MODEL_NOTE[mk] || '') + `\nDuration: ${sec} seconds — plan the action to fit exactly.` + (audio ? '' : '\nSound is off: do not describe sound.');
-  const content = [await imgBlock(start), {type:'text', text:(persona ? 'Person (description): ' + persona + '\n' : '') + 'What should happen (Romanian): ' + text}];
-  const {text:t, usd} = await claudeCall(sys, content, {signal});
-  const j = jsonOut(t); return {video:String(j.video || '').trim(), nota:String(j.nota || '').trim(), usd};
+// planul + promptul video din textul tău și poza de start; missing = pașii pe care o încercare anterioară nu i-a arătat
+async function clVideoPrompt({text, start, mk, sec, audio, persona, missing}, signal){
+  const m = MODELE[mk] || {dur:[sec]};
+  const sys = SYS_PLAN.replace('MODEL_LINES', MODEL_LINES[mk] || '')
+    + `\n\nModel: ${(MODELE[mk] || {}).nume || mk}. D = ${sec} seconds. Allowed durations: ${m.dur.join(', ')} seconds.` + (audio ? ' Sound is on.' : ' Sound is off: no audio line, no speech.');
+  const content = [await imgBlock(start), {type:'text', text:(persona ? 'Person (description): ' + persona + '\n' : '') + 'What should happen (Romanian): ' + text
+    + (missing && missing.length ? '\n\nA previous clip with this request did NOT show these steps clearly: ' + missing.join('; ') + '. Give them enough time and make them unmistakable, without dropping the other steps.' : '')}];
+  const {text:t, usd} = await claudeCall(sys, content, {signal, max:2000});
+  const j = jsonOut(t);
+  const steps = (Array.isArray(j.steps) ? j.steps : []).map(x => ({t0:Math.max(0, +x.t0 || 0), t1:Math.min(sec, +x.t1 || sec), ro:String(x.ro || '').trim(), en:String(x.en || '').trim()})).filter(x => x.ro || x.en);
+  const sug = +j.secSuggest;
+  return {video:String(j.video || '').trim(), nota:String(j.nota || '').trim(), steps, fits:j.fits !== false, secSuggest:m.dur.includes(sug) ? sug : null, usd};
+}
+/* 1.1: verificarea pașilor în clip: Claude vede 8 cadre (cu secunda fiecăruia) și spune pentru fiecare pas da / parțial / nu / nesigur */
+async function clCheckSteps(steps, frames, signal){
+  const sys = `You check whether a generated video followed a timed step plan. You get frames from the video, each labelled with its time in seconds. For each step, judge ONLY from what is visible in the frames: "da" (clearly done), "partial" (started or done weakly/wrongly: wrong hand, wrong direction, not completed), "nu" (not visible at all), "nesigur" (the frames are too sparse to see a fast action). Be strict about details the step states (hand, side, count, direction). Answer ONLY with JSON: {"steps":[{"i":1,"v":"da|partial|nu|nesigur","ro":"very short reason in Romanian"}]}`;
+  const content = [];
+  for(const f of frames){ content.push({type:'text', text:`Frame at ${(+f.t || 0).toFixed(1)} s:`}); content.push(await imgBlock(f, 640)); }
+  content.push({type:'text', text:'Steps:\n' + steps.map((s, i) => `${i + 1}. [${s.t0}–${s.t1} s] ${s.en || s.ro}`).join('\n')});
+  const {text:t, usd} = await claudeCall(sys, content, {signal, max:900});
+  const j = jsonOut(t), V = ['da', 'partial', 'nu', 'nesigur'];
+  const out = steps.map((s, i) => { const x = (j.steps || []).find(y => +y.i === i + 1) || {}; return {v:V.includes(x.v) ? x.v : 'nesigur', ro:String(x.ro || '').slice(0, 160)}; });
+  return {steps:out, ok:out.filter(x => x.v === 'da').length, n:out.length, usd};
 }
 // promptul pentru poza de start (FLUX.2 klein 9B), cu reperele personajului
 async function clImagePrompt({text, persona, aspect, hasFace}, signal){

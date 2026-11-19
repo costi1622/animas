@@ -35,7 +35,9 @@ label{display:block;color:var(--mut);font-size:13px;margin:10px 0 4px}
 label>input,label>select,label>textarea{margin-top:4px}
 label.chk{display:flex;gap:8px;align-items:flex-start;color:var(--txt);font-size:14px}
 label.chk input{width:auto;margin-top:3px}
-.muted{color:var(--mut);font-size:13px}.ok{color:var(--ok)}.warn{color:var(--warn)}.errtxt{color:var(--bad);font-size:13px;margin-top:4px}
+.muted{color:var(--mut);font-size:13px}.ok{color:var(--ok)}.warn{color:var(--warn)}.errtxt{color:var(--bad);font-size:13px;margin-top:4px}.bad{color:var(--bad)}
+ol.steps{margin:6px 0 4px;padding-left:22px;font-size:14px}ol.steps li{margin:3px 0}.sec{color:var(--acc2);font-variant-numeric:tabular-nums;font-size:13px}
+#pSteps .warn{font-size:13px;margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .mono{font:13px/1.45 ui-monospace,monospace;white-space:pre-wrap}
 .empty{color:var(--mut);padding:18px;text-align:center;border:1px dashed var(--line);border-radius:12px}
 .chips{display:flex;gap:10px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:none}
@@ -104,7 +106,7 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
     <section class="box"><h3>Ce face</h3>
       <textarea id="cText" rows="4" placeholder="ex.: se uită spre cameră, zâmbește, își dă părul după ureche și face un pas spre mine" oninput="onText(this.value)"></textarea>
       <div class="row"><button class="sm ghost" id="btnPrep" onclick="btnPrepare()">Pregătește promptul</button><span class="muted">Claude îl scrie pentru model și se uită la poză.</span></div>
-      <div id="pBox" hidden><label>Promptul pentru model (îl poți modifica)<textarea id="pText" rows="6" class="mono" oninput="onPromptEdit(this.value)"></textarea></label><div class="muted" id="pNota"></div></div>
+      <div id="pBox" hidden><div id="pSteps"></div><label>Promptul pentru model (îl poți modifica)<textarea id="pText" rows="6" class="mono" oninput="onPromptEdit(this.value)"></textarea></label><div class="muted" id="pNota"></div></div>
     </section>
     <section class="box"><h3>Clipul</h3>
       <label>Model<select id="oModel" onchange="setOpt('mk', this.value)"></select></label>
@@ -145,6 +147,7 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
     <section class="box"><h3>Comportament</h3>
       <label class="chk"><input type="checkbox" id="sUseCl" onchange="setFlag('useClaude', this.checked)"> Claude rescrie promptul (altfel textul tău merge direct la model)</label>
       <label class="chk"><input type="checkbox" id="sFace" onchange="setFlag('checkFace', this.checked)"> Verifică fața (ArcFace, în telefon, gratuit)</label>
+      <label class="chk"><input type="checkbox" id="sSteps" onchange="setFlag('checkSteps', this.checked)"> Verifică pașii în clip (Claude vede 8 cadre, ~1–2 cenți pe clip)</label>
     </section>
     <section class="box"><h3>Costuri</h3><div id="sCosts"></div><p class="muted" id="sStore"></p></section>
   </div>
