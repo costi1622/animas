@@ -53,14 +53,14 @@ async function csCheck(clip, frame, charId){
   const sys = 'You check short video clips used for a phone video call. Judge only what is visible in the frames. Answer ONLY with JSON.';
   const content = [];
   for(const f of fr) content.push(await imgBlock(f, 512));
-  content.push({type:'text', text:'For ALL frames: "adult" = the person clearly looks like an adult; "everyday" = a natural video-call motion (talking, listening, nodding, smiling, laughing, thinking, waving, glancing away, small natural movement — wearing a bikini, swimwear, or reveal/casual clothes is allowed and must NOT make "everyday" false); "selfie" = framed like a phone video call (face visible, roughly facing the camera); "in_bikini" = true if the person wears a bikini or two-piece swimsuit in any frame, else false; "outfit_desc" = short Romanian description of the outfit (e.g. "bikini negru", "tricou și blugi"). JSON: {"adult":true,"everyday":true,"selfie":true,"in_bikini":false,"outfit_desc":"","why":"short Romanian reason only if adult is false or the motion itself is unnatural"}'});
+  content.push({type:'text', text:'For ALL frames: "adult" = the person clearly looks like an adult; "everyday" = a natural video-call motion (talking, listening, nodding, smiling, laughing, thinking, waving, glancing away, small natural movement — any clothing, bikini, swimwear, or reveal outfit is allowed and must keep "everyday" true); "selfie" = framed like a phone video call (face visible, roughly facing the camera); "in_bikini" = true if the person wears a bikini or two-piece swimsuit in any frame, else false; "outfit_desc" = short Romanian description of the outfit (e.g. "bikini negru", "tricou și blugi"). JSON: {"adult":true,"everyday":true,"selfie":true,"in_bikini":false,"outfit_desc":"","why":"short Romanian reason only if adult is false or the motion itself is unnatural"}'});
   const {text} = await claudeCall(sys, content, {max:260});
   const j = jsonOut(text);
   const in_bikini = j.in_bikini === true;
   const outfit_desc = String(j.outfit_desc || '').trim().slice(0, 120);
   let why = String(j.why || '').trim().slice(0, 140);
-  const outfitOnly = /\b(bikini|costum de baie|swim|top|lenjerie|sutien|chilo|haine|ținuta|tinuta|îmbrăcat|imbracat|decolteu)\b/i.test(why);
-  const everydayOk = j.everyday === true || (outfitOnly && j.adult === true);
+  const outfitOrBikini = in_bikini || /(bikini|costum\s*de\s*baie|baie|swim|top|lenjerie|sutien|chilo|haine|ținuta|tinuta|îmbrăcat|imbracat|decolteu|dezbr|gol|expun)/i.test(why);
+  const everydayOk = j.everyday === true || (outfitOrBikini && j.adult === true);
   const ok = j.adult === true && everydayOk;
   if(ok) why = '';
   else if(!why) why = 'nu e potrivit pentru apel';
