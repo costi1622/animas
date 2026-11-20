@@ -48,17 +48,23 @@ async function csCheck(clip, frame, charId){
   const vb = await DB.get(clip.vid); if(!vb) throw new Error('Clipul lipsește din telefon.');
   const fr = await videoFrames(vb, 4); if(!fr.length) throw new Error('Nu pot citi cadrele clipului.');
   let jump = null; try{ const f = frame ? await DB.get(frame) : null; if(f) jump = await csDiff(fr[0], f); }catch(e){}
-  let face = null; try{ const c = charById(charId || C.charId); const sc = c && S.checkFace === 'on' ? await clipScore(c, fr) : null; face = sc && sc.avg != null ? sc.avg : null; }catch(e){}   // 1.7.1: e chiar ea? (clipul poate veni de la alt personaj sau fără personaj)
+  let face = null; try{ const c = charById(charId || C.charId); const sc = c && S.checkFace === 'on' ? await clipScore(c, fr) : null; face = sc && sc.avg != null ? sc.avg : null; }catch(e){}
   if(!S.clKey) throw new Error('Verificarea pentru apel are nevoie de Claude (cheia Anthropic, în Setări).');
-  const sys = 'You check short video clips that will be used as the animation of a phone video call. Judge only what is visible in the frames. Answer ONLY with JSON.';
+  const sys = 'You check short video clips used for a phone video call. Judge only what is visible in the frames. Answer ONLY with JSON.';
   const content = [];
   for(const f of fr) content.push(await imgBlock(f, 512));
-  content.push({type:'text', text:'For ALL frames: "adult" = the person clearly looks like an adult; "everyday" = a natural motion that fits a video call (talking, listening, nodding, smiling, laughing, thinking, waving, glancing away, small natural activity — do NOT set everyday=false solely because the person wears a bikini, swimwear, or a revealing top); "selfie" = framed like a phone video call (face visible, roughly facing the camera); "in_bikini" = true if the person is wearing a bikini or two-piece swimsuit in any frame, otherwise false; "outfit_desc" = short description in Romanian of what the person is wearing (e.g. "bikini negru", "top și pantaloni scurți", "tricou alb și blugi"). JSON: {"adult":true,"everyday":true,"selfie":true,"in_bikini":false,"outfit_desc":"...","why":"one short reason in Romanian ONLY when adult is false or the motion itself is unnatural"}'});
+  content.push({type:'text', text:'For ALL frames: "adult" = the person clearly looks like an adult; "everyday" = a natural video-call motion (talking, listening, nodding, smiling, laughing, thinking, waving, glancing away, small natural movement — wearing a bikini, swimwear, or reveal/casual clothes is allowed and must NOT make "everyday" false); "selfie" = framed like a phone video call (face visible, roughly facing the camera); "in_bikini" = true if the person wears a bikini or two-piece swimsuit in any frame, else false; "outfit_desc" = short Romanian description of the outfit (e.g. "bikini negru", "tricou și blugi"). JSON: {"adult":true,"everyday":true,"selfie":true,"in_bikini":false,"outfit_desc":"","why":"short Romanian reason only if adult is false or the motion itself is unnatural"}'});
   const {text} = await claudeCall(sys, content, {max:260});
-  const j = jsonOut(text), ok = j.adult === true && j.everyday === true;
+  const j = jsonOut(text);
   const in_bikini = j.in_bikini === true;
   const outfit_desc = String(j.outfit_desc || '').trim().slice(0, 120);
-  return {ok, selfie:j.selfie !== true, in_bikini, outfit_desc, why:ok ? '' : String(j.why || 'nu e potrivit pentru apel').slice(0, 140), jump, face, at:Date.now()};
+  let why = String(j.why || '').trim().slice(0, 140);
+  const outfitOnly = /\b(bikini|costum de baie|swim|top|lenjerie|sutien|chilo|haine|ținuta|tinuta|îmbrăcat|imbracat|decolteu)\b/i.test(why);
+  const everydayOk = j.everyday === true || (outfitOnly && j.adult === true);
+  const ok = j.adult === true && everydayOk;
+  if(ok) why = '';
+  else if(!why) why = 'nu e potrivit pentru apel';
+  return {ok, selfie:j.selfie !== false, in_bikini, outfit_desc, why, jump, face, at:Date.now()};
 }
 // diferența medie (0–100) între două imagini, micșorate la 36×64, alb-negru
 async function csDiff(a, b){
