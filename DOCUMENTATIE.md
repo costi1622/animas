@@ -1,6 +1,6 @@
 # Animas — documentație
 
-Versiunea **1.4** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
+Versiunea **1.5** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
 Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · publicare: arhiva ZIP urcată în rădăcina repo-ului, workflow-ul `publica.yml` o dezarhivează și o publică pe GitHub Pages.
 
 ## Principii
@@ -54,6 +54,18 @@ MoveNet Lightning rulează în telefon prin TensorFlow.js din face-api (`faceapi
 - **Semnele distinctive** (alunițe, pistrui, tatuaje, ochelari, bijuterii, machiaj) intră în descrierea „ce se vede” și în regula de identitate.
 - **Proporțiile în clip:** rapoarte care nu depind de distanță (umeri/trunchi, șolduri/umeri, braț/antebraț, coapsă/gambă), comparate cu poza de start pe cele 8 cadre; mediana abaterilor → procent (5% → 90, 10% → 80 = pragul, 15% → 70). Aproximativ: unghiul și poziția schimbă măsurătorile; nu măsoară forme de sub haine.
 
+## Cadrul final ancorat (1.5)
+Planul lui Claude are și `endPose` (poziția de la finalul clipului). FLUX.2 klein 9B face ultima imagine din poza de start (reperul 1) și portretul de aproape (reperul 2): aceeași persoană, același corp, haine, loc, lumină și încadrare, altă poziție; aceeași mărime ca poza de start (multiplu de 16, latura lungă ≤ 1.280). Se verifică fața (ArcFace ≥ 64%) și proporțiile față de poza de start (≥ 80%); până la 2 încercări, se păstrează cea mai bună. Cadrul se trimite ca `frameImages[1] = {image, frame:'last'}` la Veo 3.1, Veo 3.1 Fast, Seedance 2.5, Kling 4.0 și P-Video-2 (Kling 4.0 Flash acceptă doar primul cadru). Promptul primește „The clip ends exactly on the provided last frame: …”. Se vede în Creează, cu scorurile și „↻ Refă cadrul final”; se poate opri din Setări. Cost: ~0,4 cenți pe încercare.
+
+## Corpul, măsurat de încredere (1.5)
+`bodyCompare`: un raport se compară doar dacă poziția îl lasă măsurabil — umeri/trunchi nu când s-a întors (nasul s-a mutat cu > 20% din lățimea umerilor față de poza de start) sau s-a aplecat (> 20°); șolduri/umeri nu aproape din profil; braț/antebraț și coapsă/gambă nu când un segment e scurtat de unghi (< 80% din lungimea din poza de start, raportat la trunchi). Scorul: media abaterilor (plafonate la 50%), nu mediana (cu mediana, o singură proporție schimbată era ascunsă). Cadrele fără nimic comparabil sunt sărite și numărate; sub 2 cadre comparabile: „nemăsurabil”. În clip: pe câte cadre s-a măsurat, câte s-au sărit, cea mai mare abatere și secunda ei; dacă fața < 64% sau corpul < 80%: „↻ Refă”.
+
+## Vârsta (1.5)
+Ca în Taifas, prag 21 de ani (estimarea face-api, media pe poză și oglinda ei; la personaje și pe portretul de aproape). Personajele care par mai tinere nu se importă, cele deja importate se marchează „blocat” și nu se pot alege, pozele urcate sau generate care par mai tinere sunt refuzate.
+
+## Urcarea pozei (1.5)
+Fișierul se citește imediat și se aduce la JPEG (≤ 2.400 px); dacă nu se poate citi (ex. HEIC/HEIF), mesaj clar. Poza arată „Se încarcă…” până e gata; orice eroare se spune.
+
 ## Ștergerea clipurilor (1.4)
 În Galerie: „Selectează” (atingi clipurile, apoi „Șterge (n)”, „Toate”, „Anulează”) și „Șterge schițele (n)”. În clip, butoanele (inclusiv „🗑 Șterge”) stau imediat sub video. Se șterg clipul, miniatura și poza de start dacă nu mai e folosită; se spune câți MB s-au eliberat. Nu se poate anula.
 
@@ -69,12 +81,13 @@ MoveNet Lightning rulează în telefon prin TensorFlow.js din face-api (`faceapi
 Taifas și Animas sunt pe aceeași adresă (`costi1622.github.io`), deci în același Chrome văd aceeași memorie a telefonului. Animas **doar citește** baza `taifas2` (personajele, pozele, cheile); dacă Taifas nu există în acel browser, deschiderea e anulată ca să nu creeze o bază goală care l-ar strica. Se copiază: numele, poza de profil, portretul de aproape (`closeRef`), poza întreagă (`photoFull`), descrierea fizică (`physEn`), și al doilea personaj din duo-uri. Reimportul actualizează, nu dublează. Cheile se preiau doar dacă sunt în telefon (nu din seiful Worker).
 
 ## Teste
-`test-animas-100.py` (Playwright, Claude și Runware simulate): 137 de verificări în browser + `test-prompt-120.js` (Node, 42 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
+`test-animas-100.py` (Playwright, Claude și Runware simulate): 159 de verificări în browser + `test-prompt-120.js` (Node, 43 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
 Rulare: `python3 test-animas-100.py <dosarul animas>` (lângă el: `fata.jpg`, `corp.jpg`, `clip.webm`).
 
 ## Istoric
 | Versiune | Data | Ce |
 | --- | --- | --- |
+| 1.5 | 20.11.2026 | cadrul final ancorat; măsurarea corpului de încredere (rapoarte doar când poziția le lasă comparabile, media în loc de mediană); „Refă” când fața sau corpul au deviat; vârsta la import și la poze; urcarea pozelor cu mesaje clare; refacerea dintr-o schiță nu mai lasă P-Video-2 ca model final |
 | 1.4 | 20.11.2026 | corpul: MoveNet în telefon (încadrare cap + corp, ce se vede din corp în prompt, proporțiile în clip); semnele distinctive ale feței în prompt; ștergerea clipurilor din galerie (selecție, toate schițele), butoanele sub video |
 | 1.3 | 20.11.2026 | încadrarea pozei de start: capul întreg, restul spre corp, formatul recomandat, mutarea cadrului; repară tăierea ochilor la selfie-uri de aproape în 16:9 |
 | 1.2.1 | 20.11.2026 | schița are durata aleasă (P-Video-2 acceptă 1–20 s; înainte era tăiată greșit la 8 s); peste 20 s, schița are 20 s și se spune |

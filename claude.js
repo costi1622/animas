@@ -51,10 +51,11 @@ THE BODY
 THE REST
 - "scene": one short sentence: who and where (e.g. "A young woman in a sunny kitchen").
 - "camera": static, or the camera move the user asked for; handheld phone feel only if asked.
+- "endPose": one English sentence (max 40 words) describing ONLY the person's pose, position, gaze and expression in the very last frame, after the last step (e.g. "standing by the window, facing the camera, right hand resting on the sill, soft smile"). Same clothes, same place; no camera words.
 - "sound": ambient sound of the place. "speech": the exact words she says, in quotes, in the user's language, or "".
 - Only adults. If the request involves a minor or someone who looks like a child, refuse: leave "steps" empty and explain in "nota".
 Answer ONLY with JSON:
-{"scene":"…","visible":"…","steps":[{"t0":0,"t1":1.5,"ro":"pasul pe scurt, în română","en":"the step in English","phases":[]}],"camera":"…","sound":"…","speech":"","fits":true,"secSuggest":null,"nota":"one short line in Romanian: what you understood and anything you left out"}`;
+{"scene":"…","visible":"…","endPose":"…","steps":[{"t0":0,"t1":1.5,"ro":"pasul pe scurt, în română","en":"the step in English","phases":[]}],"camera":"…","sound":"…","speech":"","fits":true,"secSuggest":null,"nota":"one short line in Romanian: what you understood and anything you left out"}`;
 // cât încape într-un clip, pe model (planul are nevoie de timp; modelele mici duc mai puțini pași)
 const MODEL_PLAN = {
   kling4f:'Kling 4.0 Flash (720p): follows a timeline well; at most 1 step per 1.5 s.',
@@ -65,7 +66,7 @@ const MODEL_PLAN = {
   pvideo2:'P-Video-2 (draft preview of the same clip, 1–20 s): plan the same steps as for the final clip; keep phases short.'
 };
 // planul + promptul video (asamblat în prompt.js) din textul tău și poza de start; missing = pașii pe care o încercare anterioară nu i-a arătat
-async function clVideoPrompt({text, start, mk, sec, audio, persona, missing, framing}, signal){
+async function clVideoPrompt({text, start, mk, sec, audio, persona, missing, framing, anchorEnd}, signal){
   const m = MODELE[mk] || {dur:[sec]};
   const sys = SYS_PLAN + `\n\nModel: ${(MODELE[mk] || {}).nume || mk}. ${MODEL_PLAN[mk] || ''} D = ${sec} seconds. Allowed durations: ${m.dur.join(', ')} seconds.` + (audio ? ' Sound is on.' : ' Sound is off: "sound" and "speech" empty.');
   const content = [await imgBlock(start), {type:'text', text:(persona ? 'Person (description): ' + persona + '\n' : '') + (framing ? 'Framing of the first frame (measured on the phone): ' + framing + '\n' : '') + 'What should happen (Romanian): ' + text
@@ -74,11 +75,11 @@ async function clVideoPrompt({text, start, mk, sec, audio, persona, missing, fra
   const j = jsonOut(t);
   const steps = (Array.isArray(j.steps) ? j.steps : []).map(x => ({t0:Math.max(0, +x.t0 || 0), t1:Math.min(sec, +x.t1 || sec), ro:String(x.ro || '').trim(), en:String(x.en || '').trim(),
     phases:(Array.isArray(x.phases) ? x.phases : []).map(y => String(y).trim()).filter(Boolean).slice(0, 5)})).filter(x => x.ro || x.en);
-  const plan = {scene:String(j.scene || '').trim(), visible:String(j.visible || '').trim(), framing:framing || '', steps, camera:String(j.camera || '').trim(),
+  const plan = {scene:String(j.scene || '').trim(), visible:String(j.visible || '').trim(), framing:framing || '', endPose:String(j.endPose || '').trim().slice(0, 300), steps, camera:String(j.camera || '').trim(),
     sound:audio ? String(j.sound || '').trim() : '', speech:audio ? String(j.speech || '').trim() : ''};
   const sug = +j.secSuggest, nota = String(j.nota || '').trim();
   if(!steps.length) return {video:'', nota, steps, fits:true, secSuggest:null, usd, plan};
-  const f = fitPrompt(mk, plan, {audio, sec});
+  const f = fitPrompt(mk, plan, {audio, sec, end:anchorEnd});
   if(f.over) throw new Error(`Pașii singuri au peste ${PROMPT_MAX} de caractere pentru model: scurtează textul sau împarte acțiunea în două clipuri.`);
   return {video:f.text, nota:nota + (f.level ? ` · prompt compactat (nivel ${f.level}), toți pașii păstrați` : ''), steps, fits:j.fits !== false, secSuggest:m.dur.includes(sug) ? sug : null, usd, plan, level:f.level};
 }

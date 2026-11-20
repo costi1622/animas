@@ -59,17 +59,65 @@ function bodyProps(b){
   if(leg.length) r.coapsa_gamba = leg.reduce((a, v) => a + v, 0) / leg.length;
   return r;
 }
-// cât de mult se potrivesc proporțiile din clip cu poza de start (0–100); aproximativ: unghiul și poziția schimbă măsurătorile
+// cât de mult se potrivesc proporțiile (0–100): media abaterilor rapoartelor comune (fiecare plafonată la 50%); 5% → 90, 10% → 80, 25% → 50
+// 1.5: media, nu mediana: cu mediana, o singură proporție schimbată (ex. șoldurile) era ascunsă de celelalte trei neschimbate
 function propMatch(a, b){
   const k = Object.keys(a).filter(x => b[x] != null); if(!k.length) return null;
-  const dev = k.map(x => Math.abs(b[x] - a[x]) / a[x]).sort((p, q) => p - q), med = dev[Math.floor((dev.length - 1) / 2)];
-  return Math.round(Math.max(0, Math.min(100, 100 - med * 200)));   // 5% abatere → 90, 15% → 70
+  const dev = k.map(x => Math.min(.5, Math.abs(b[x] - a[x]) / a[x])), mean = dev.reduce((p, q) => p + q, 0) / dev.length;
+  return Math.round(Math.max(0, Math.min(100, 100 - mean * 200)));
+}
+/* 1.5: comparația de încredere. Un raport se folosește doar dacă poziția din cadru îl lasă măsurabil:
+   - umeri/trunchi: nu dacă s-a întors (nasul s-a mutat față de mijlocul umerilor) sau s-a aplecat (trunchiul s-a înclinat > 20°)
+   - șolduri/umeri: nu dacă e aproape din profil (umerii au scăzut sub jumătate față de trunchi, față de poza de start)
+   - braț/antebraț, coapsă/gambă: nu dacă unul din segmente e „scurtat” de unghi (sub 80% din lungimea lui din poza de start,
+     raportat la trunchi): un braț întins spre cameră pare mai scurt, deși nu e
+   Cadrele în care nu rămâne nimic măsurabil sunt sărite (și numărate). */
+const RATIO_RO = {umeri_trunchi:'umeri/trunchi', solduri_umeri:'șolduri/umeri', brat_antebrat:'braț/antebraț', coapsa_gamba:'coapsă/gambă'};
+function poseGeo(b){
+  const g = n => kpOk(b, n), uS = g('umarS'), uD = g('umarD'), sS = g('soldS'), sD = g('soldD'), nas = g('nas'), G = {};
+  if(uS && uD){ G.sw = dist(uS, uD); G.ms = mid(uS, uD); }
+  if(sS && sD){ G.hw = dist(sS, sD); G.mh = mid(sS, sD); }
+  if(G.ms && G.mh){ G.tr = dist(G.ms, G.mh); G.ang = Math.atan2(G.mh.x - G.ms.x, G.mh.y - G.ms.y) * 180 / Math.PI; }
+  if(nas && G.ms && G.sw) G.turn = (nas.x - G.ms.x) / G.sw;
+  const seg = (a, c) => { const A = g(a), B = g(c); return A && B ? dist(A, B) : null; };
+  G.seg = {bS:seg('umarS', 'cotS'), bD:seg('umarD', 'cotD'), aS:seg('cotS', 'incheieturaS'), aD:seg('cotD', 'incheieturaD'),
+           cS:seg('soldS', 'genunchiS'), cD:seg('soldD', 'genunchiD'), gS:seg('genunchiS', 'gleznaS'), gD:seg('genunchiD', 'gleznaD')};
+  return G;
+}
+function bodyCompare(b0, b1){
+  const A = bodyProps(b0), B = bodyProps(b1), G0 = poseGeo(b0), G1 = poseGeo(b1), use = {};
+  const turned = G0.turn != null && G1.turn != null ? Math.abs(G1.turn - G0.turn) > .2 : false;
+  const bent = G0.ang != null && G1.ang != null ? Math.abs(G1.ang - G0.ang) > 20 : false;
+  if(A.umeri_trunchi != null && B.umeri_trunchi != null && !turned && !bent) use.umeri_trunchi = 1;
+  if(A.solduri_umeri != null && B.solduri_umeri != null && G0.tr && G1.tr && G1.sw / G1.tr >= .5 * (G0.sw / G0.tr)) use.solduri_umeri = 1;
+  const full = (k0, k1) => { const s0 = G0.seg[k0], s1 = G1.seg[k1 || k0]; return s0 && s1 && G0.tr && G1.tr && !bent && s1 / G1.tr >= .8 * (s0 / G0.tr); };
+  if(A.brat_antebrat != null && B.brat_antebrat != null && ((full('bS') && full('aS')) || (full('bD') && full('aD')))) use.brat_antebrat = 1;
+  if(A.coapsa_gamba != null && B.coapsa_gamba != null && ((full('cS') && full('gS')) || (full('cD') && full('gD')))) use.coapsa_gamba = 1;
+  const k = Object.keys(use); if(!k.length) return null;
+  const a = {}, b = {}; for(const x of k){ a[x] = A[x]; b[x] = B[x]; }
+  const devs = k.map(x => ({r:x, d:Math.abs(B[x] - A[x]) / A[x]})).sort((p, q) => q.d - p.d);
+  return {pct:propMatch(a, b), used:k, worst:devs[0]};
 }
 async function bodyScore(start, frames){
   const b0 = await bodyOf(start).catch(() => null); if(!b0) return null;
-  const p0 = bodyProps(b0); if(!Object.keys(p0).length) return null;
-  const P = [];
-  for(const f of frames){ const b = await bodyOf(f).catch(() => null); if(!b) continue; const m = propMatch(p0, bodyProps(b)); if(m != null) P.push(m); }
-  if(!P.length) return {seen:0, n:frames.length, avg:null, min:null};
-  return {seen:P.length, n:frames.length, avg:Math.round(P.reduce((a, v) => a + v, 0) / P.length), min:Math.min(...P)};
+  if(!Object.keys(bodyProps(b0)).length) return null;
+  const P = []; let skip = 0, worst = null;
+  for(const f of frames){
+    const b = await bodyOf(f).catch(() => null); if(!b){ skip++; continue; }
+    const r = bodyCompare(b0, b); if(!r){ skip++; continue; }
+    P.push(r.pct); if(!worst || r.worst.d > worst.d) worst = {...r.worst, t:f.t};
+  }
+  const out = {seen:P.length, n:frames.length, skip, v:2};
+  if(P.length < 2) return {...out, avg:null, min:null, why:'prea puține cadre comparabile (poziția diferă mult de poza de start)'};
+  return {...out, avg:Math.round(P.reduce((a, v) => a + v, 0) / P.length), min:Math.min(...P), worst:worst && {r:RATIO_RO[worst.r] || worst.r, pct:Math.round(worst.d * 100), t:worst.t}};
+}
+// 1.5: vârsta aparentă (face-api, ca în Taifas): mediana pe poză și oglinda ei; null dacă nu se vede fața
+async function ageOf(blob){
+  const ages = [];
+  for(const flip of [false, true]){
+    let b = blob;
+    if(flip){ const u = URL.createObjectURL(blob); try{ const im = await loadImg(u), cv = document.createElement('canvas'); cv.width = im.naturalWidth; cv.height = im.naturalHeight; const g = cv.getContext('2d'); g.translate(cv.width, 0); g.scale(-1, 1); g.drawImage(im, 0, 0); b = await cvBlob(cv, .92); } finally { URL.revokeObjectURL(u); } }
+    try{ const f = await faceOf(b, {age:true}); if(f && Number.isFinite(f.age)) ages.push(f.age); }catch(e){}
+  }
+  return ages.length ? Math.round(ages.reduce((a, v) => a + v, 0) / ages.length) : null;
 }

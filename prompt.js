@@ -45,7 +45,8 @@ function stepText(s, withPhases = true){
 }
 /* asamblează promptul pentru modelul mk din plan; nivelurile de compactare scot pe rând ce e opțional:
    0 tot · 1 mișcarea scurtată · 2 identitatea scurtată · 3 fără ce se vede în poză · 4 regula scurtă · 5 fazele pașilor comprimate · 6 fără camera */
-function buildPrompt(mk, plan, {audio = false, sec} = {}, level = 0){
+function buildPrompt(mk, plan, opts = {}, level = 0){
+  const audio = !!opts.audio;
   const st = STRAT[mk] || STRAT.kling4f, P = plan || {}, steps = Array.isArray(P.steps) ? P.steps : [];
   const L = [st.lead];
   if(P.scene) L.push(String(P.scene).trim());
@@ -57,6 +58,8 @@ function buildPrompt(mk, plan, {audio = false, sec} = {}, level = 0){
   if(st.time === 'stamps') for(const s of steps) L.push(`[${fmtT(s.t0)}–${fmtT(s.t1)} s] ${stepText(s, ph)}.`);
   else L.push(steps.map((s, i) => (i ? (i === steps.length - 1 ? 'finally ' : 'then ') : 'First ') + stepText(s, ph)).join(', ') + '.');
   if(level < 6 && P.camera) L.push('Camera: ' + String(P.camera).trim().replace(/\.+$/, '') + '.');
+  // 1.5: cadrul final ancorat: clipul se termină pe imaginea dată (aceeași persoană, același corp)
+  if(P.endPose && (opts || {}).end) L.push('The clip ends exactly on the provided last frame: ' + String(P.endPose).trim().replace(/\.+$/, '') + '.');
   if(level < 1) L.push(st.motion); else if(level < 4) L.push(st.motion.split(':')[0].split(';')[0].replace(/\.+$/, '') + '.');
   if(st.audio === 'always') L.push('Audio: ' + (P.sound ? String(P.sound).trim().replace(/\.+$/, '') : 'natural ambient sound of the place') + (P.speech ? `; she says ${P.speech}` : '') + '; no background music, no subtitles.');
   else if(st.audio === 'switch' && audio) L.push('Audio: ' + (P.sound ? String(P.sound).trim().replace(/\.+$/, '') : 'natural ambient sound') + (P.speech ? `; she says ${P.speech}` : '') + '.');

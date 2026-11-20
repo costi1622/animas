@@ -11,15 +11,15 @@ const RW_KLEIN = 'runware:400@2';
 const MODELE = {
   kling4f: {id:'klingai:kling-video@4.0-flash', nume:'Kling 4.0 Flash', rol:'final, ieftin',
     res:{'720p':[.094, .094]}, dur:range(3, 20), def:5, audio:'always', size:'none', aspects:['9:16', '16:9', '1:1']},
-  kling4: {id:'klingai:kling-video@4.0', nume:'Kling 4.0', rol:'final, cel mai fidel',
+  kling4: {id:'klingai:kling-video@4.0', nume:'Kling 4.0', rol:'final, cel mai fidel', last:true,
     res:{'720p':[.157, .157], '1080p':null}, dur:range(3, 30), def:5, audio:'always', size:'resolution', aspects:['9:16', '16:9', '1:1']},
-  veo31: {id:'google:3@2', nume:'Veo 3.1', rol:'final, cinematic',
+  veo31: {id:'google:3@2', nume:'Veo 3.1', rol:'final, cinematic', last:true,
     res:{'720p':[.20, .40], '1080p':[.20, .40], '4K':[.40, .60]}, dur:[4, 6, 7, 8], def:8, audio:'switch', size:'resolution', aspects:['9:16', '16:9']},
-  veo31f: {id:'google:3@3', nume:'Veo 3.1 Fast', rol:'final, rapid',
+  veo31f: {id:'google:3@3', nume:'Veo 3.1 Fast', rol:'final, rapid', last:true,
     res:{'720p':[.10, .15], '1080p':[.10, .15], '4K':[.30, .35]}, dur:[4, 6, 7, 8], def:8, audio:'switch', size:'resolution', aspects:['9:16', '16:9']},
-  seed25: {id:'bytedance:seedance@2.5', nume:'Seedance 2.5', rol:'clipuri lungi',
+  seed25: {id:'bytedance:seedance@2.5', nume:'Seedance 2.5', rol:'clipuri lungi', last:true,
     res:{'480p':[.1025, .1025], '720p':[.23, .23], '1080p':[.614, .614], '4K':[.921, .921]}, dur:range(4, 30), def:5, audio:'switch', size:'resolution', aspects:['9:16', '16:9', '1:1']},
-  pvideo2: {id:'prunaai:p-video@2', nume:'P-Video-2', rol:'schiță',
+  pvideo2: {id:'prunaai:p-video@2', nume:'P-Video-2', rol:'schiță', last:true,
     res:{'720p':[.025, .025]}, draftUsd:.015, dur:range(1, 20), def:5, audio:'off', size:'resolution', aspects:['9:16', '16:9', '1:1']}
 };
 function range(a, b){ const o = []; for(let i = a; i <= b; i++) o.push(i); return o; }
@@ -137,11 +137,13 @@ function checkLen(prompt){
   return t;
 }
 // sarcina video din poza de start
-async function videoTask({mk, res, sec, audio, draft, prompt, start}){
+async function videoTask({mk, res, sec, audio, draft, prompt, start, end}){
   const m = MODELE[mk];
   const t = {taskType:'videoInference', taskUUID:crypto.randomUUID(), model:m.id, positivePrompt:checkLen(prompt),
     duration:sec, numberResults:1, outputType:'URL', outputFormat:'MP4',
     inputs:{frameImages:[{image:await dataUri(start, 1280, .92), frame:'first'}]}};
+  // 1.5: cadrul final ancorat (Veo 3.1, Seedance 2.5, Kling 4.0, P-Video-2; Kling 4.0 Flash acceptă doar primul cadru)
+  if(end && m.last) t.inputs.frameImages.push({image:await dataUri(end, 1280, .92), frame:'last'});
   if(m.size === 'resolution') t.resolution = res;
   if(mk === 'pvideo2'){ t.fps = 24; t.outputQuality = 90; t.settings = {audio:false, draft:!!draft, promptUpsampling:false}; }
   else t.outputQuality = 95;
