@@ -45,7 +45,7 @@ THE STEPS
 - Keep each "en" under 160 characters and each phase under 90 characters.
 
 THE BODY
-- "visible": in at most 40 words, what the first frame actually shows about the person: build (e.g. slim, athletic, curvy), height impression, shoulder width, hair length and style, the clothes and how they fit, pose. Describe only what is visible; never guess what clothes hide.
+- "visible": in at most 45 words, what the first frame actually shows about the person: build (e.g. slim, athletic, curvy), height impression, shoulder width, hair length, color and style, distinctive features (moles, freckles, tattoos, glasses, jewelry, makeup), the clothes and how they fit, pose. Describe only what is visible; never guess what clothes hide.
 - Nothing in the plan may change the body: no reshaping, no growing or shrinking any part. Clothes stay on the person; only an outer layer (jacket, coat, scarf, hat, gloves) may be taken off or put on. If the user asks to undress beyond an outer layer, leave that part out and say so in "nota".
 
 THE REST
@@ -65,16 +65,16 @@ const MODEL_PLAN = {
   pvideo2:'P-Video-2 (draft preview of the same clip, 1–20 s): plan the same steps as for the final clip; keep phases short.'
 };
 // planul + promptul video (asamblat în prompt.js) din textul tău și poza de start; missing = pașii pe care o încercare anterioară nu i-a arătat
-async function clVideoPrompt({text, start, mk, sec, audio, persona, missing}, signal){
+async function clVideoPrompt({text, start, mk, sec, audio, persona, missing, framing}, signal){
   const m = MODELE[mk] || {dur:[sec]};
   const sys = SYS_PLAN + `\n\nModel: ${(MODELE[mk] || {}).nume || mk}. ${MODEL_PLAN[mk] || ''} D = ${sec} seconds. Allowed durations: ${m.dur.join(', ')} seconds.` + (audio ? ' Sound is on.' : ' Sound is off: "sound" and "speech" empty.');
-  const content = [await imgBlock(start), {type:'text', text:(persona ? 'Person (description): ' + persona + '\n' : '') + 'What should happen (Romanian): ' + text
+  const content = [await imgBlock(start), {type:'text', text:(persona ? 'Person (description): ' + persona + '\n' : '') + (framing ? 'Framing of the first frame (measured on the phone): ' + framing + '\n' : '') + 'What should happen (Romanian): ' + text
     + (missing && missing.length ? '\n\nA previous clip with this request did NOT show these steps clearly: ' + missing.join('; ') + '. Give them enough time and make them unmistakable, without dropping the other steps.' : '')}];
   const {text:t, usd} = await claudeCall(sys, content, {signal, max:2000});
   const j = jsonOut(t);
   const steps = (Array.isArray(j.steps) ? j.steps : []).map(x => ({t0:Math.max(0, +x.t0 || 0), t1:Math.min(sec, +x.t1 || sec), ro:String(x.ro || '').trim(), en:String(x.en || '').trim(),
     phases:(Array.isArray(x.phases) ? x.phases : []).map(y => String(y).trim()).filter(Boolean).slice(0, 5)})).filter(x => x.ro || x.en);
-  const plan = {scene:String(j.scene || '').trim(), visible:String(j.visible || '').trim(), steps, camera:String(j.camera || '').trim(),
+  const plan = {scene:String(j.scene || '').trim(), visible:String(j.visible || '').trim(), framing:framing || '', steps, camera:String(j.camera || '').trim(),
     sound:audio ? String(j.sound || '').trim() : '', speech:audio ? String(j.speech || '').trim() : ''};
   const sug = +j.secSuggest, nota = String(j.nota || '').trim();
   if(!steps.length) return {video:'', nota, steps, fits:true, secSuggest:null, usd, plan};

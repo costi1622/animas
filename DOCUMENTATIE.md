@@ -1,6 +1,6 @@
 # Animas — documentație
 
-Versiunea **1.3** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
+Versiunea **1.4** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
 Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · publicare: arhiva ZIP urcată în rădăcina repo-ului, workflow-ul `publica.yml` o dezarhivează și o publică pe GitHub Pages.
 
 ## Principii
@@ -18,9 +18,10 @@ Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · public
 | `runware.js` | modelele video cu prețuri, sarcinile asincrone, poza de start (FLUX.2 klein 9B) |
 | `claude.js` | planul video structurat, verificarea pașilor, promptul pozei, descrierea personajului |
 | `prompt.js` | 1.2: asamblarea promptului video pe strategia fiecărui model, limita de 2.000 de caractere, compactarea fără pierderi de pași |
+| `body.js` | 1.4: corpul cu MoveNet Lightning (17 puncte), încadrarea, ce se vede din corp, proporțiile în clip |
 | `face.js` | face-api (fața + 68 de puncte + vârsta) și ArcFace (amprenta de 512 numere) |
 | `sw.js`, `manifest.webmanifest`, `icon*` | instalare ca aplicație, funcționare fără rețea pentru ecrane |
-| `vendor/` | face-api, ONNX Runtime Web, ArcFace (bucăți de cel mult 5 MB) |
+| `vendor/` | face-api, ONNX Runtime Web, ArcFace (bucăți de cel mult 5 MB), `pose/` MoveNet Lightning (4,6 MB, din @vladmandic/human-models 3.0.4) |
 
 ## Modelele (prețuri Runware, verificate 19.11.2026)
 | Cheie | Model Runware | Rezoluții, $/s (fără / cu sunet) | Durate | Sunet |
@@ -46,6 +47,16 @@ Claude nu mai scrie promptul liber: dă planul în JSON (`scene`, `visible` = ce
 ## Încadrarea pozei de start (1.3)
 `cropRect(W, H, format, fața, mutare)`: cel mai mare cadru cu formatul ales; capul întreg (fața + ~50% deasupra pentru frunte și păr, cât există în poză) cu ~6% aer deasupra, iar restul cadrului spre corp. Dacă formatul e prea scund pentru cap (ex. selfie vertical de aproape în 16:9), ochii se pun la mijloc și se spune „Capul nu încape întreg”. Sub poză: cât la sută din poză rămâne, formatul recomandat (cel care păstrează capul întreg și cea mai mare parte din poză, dintre cele permise de model) cu buton, și „▲ mai sus / ▼ mai jos / auto” (pași de 10% din cadru) când e loc de mutat. Fața se caută o dată pe poza întreagă. 1.0–1.2 puneau bărbia la 38% din înălțime și, la selfie-urile de aproape în 16:9, tăiau ochii și fruntea (iar scorul feței scădea).
 
+## Corpul (1.4)
+MoveNet Lightning rulează în telefon prin TensorFlow.js din face-api (`faceapi.tf.loadGraphModel`). Poza se pune într-un pătrat cu margini (fără deformare), 192×192; punctele cu încredere ≥ 0,3 contează.
+- **Încadrarea:** dacă capul și corpul găsit încap în format, cadrul le cuprinde pe amândouă, centrat; altfel rămâne regula din 1.3 (capul întreg, restul spre corp). Fără față, cadrul se centrează pe corp.
+- **Ce se vede** în cadrul final (tot corpul / cap–genunchi / cap–șolduri / cap și umeri) apare sub poză și merge la Claude și în prompt: „Framing: …; păstrează încadrarea, nu inventa părți ale corpului din afara cadrului”.
+- **Semnele distinctive** (alunițe, pistrui, tatuaje, ochelari, bijuterii, machiaj) intră în descrierea „ce se vede” și în regula de identitate.
+- **Proporțiile în clip:** rapoarte care nu depind de distanță (umeri/trunchi, șolduri/umeri, braț/antebraț, coapsă/gambă), comparate cu poza de start pe cele 8 cadre; mediana abaterilor → procent (5% → 90, 10% → 80 = pragul, 15% → 70). Aproximativ: unghiul și poziția schimbă măsurătorile; nu măsoară forme de sub haine.
+
+## Ștergerea clipurilor (1.4)
+În Galerie: „Selectează” (atingi clipurile, apoi „Șterge (n)”, „Toate”, „Anulează”) și „Șterge schițele (n)”. În clip, butoanele (inclusiv „🗑 Șterge”) stau imediat sub video. Se șterg clipul, miniatura și poza de start dacă nu mai e folosită; se spune câți MB s-au eliberat. Nu se poate anula.
+
 ## Fluxul
 1. **Personaj** (din Taifas sau nou) → **poza de start**: profilul, o poză urcată sau o scenă generată (Claude scrie promptul, FLUX.2 klein 9B cu poza de profil + portretul de aproape ca repere). Poza se decupează la 9:16 / 16:9 / 1:1 cu fața în cadru, iar fața se măsoară (ArcFace, ≥ 64% = aceeași persoană).
 2. **Ce face** (în română) → **1.1: planul pe secunde.** Claude (vede poza de start) împarte textul în acțiuni vizibile, în ordinea ta, fără să lipsească sau să adauge ceva, păstrând toate detaliile (mâna, stânga/dreapta, de câte ori, încotro privește, ce spune), și dă fiecăreia un interval realist. Dacă nu încap în durata aleasă, spune și propune durata („Pune 8 s” refă planul). Promptul pentru model se scrie din plan: o linie de context („aceeași persoană, același loc, un singur cadru continuu”), o linie pe pas `[a–b s] acțiunea`, camera, sunetul (Kling: mereu, cu „no subtitles, no background music”), și regula finală „doar acești pași, în ordinea asta, fiecare dus până la capăt; fără tăieturi, fără gesturi în plus”. Planul se vede în română în Creează. Promptul se poate modifica; dacă schimbi textul sau setările, se rescrie singur la trimitere (dacă nu l-ai modificat tu).
@@ -58,12 +69,13 @@ Claude nu mai scrie promptul liber: dă planul în JSON (`scene`, `visible` = ce
 Taifas și Animas sunt pe aceeași adresă (`costi1622.github.io`), deci în același Chrome văd aceeași memorie a telefonului. Animas **doar citește** baza `taifas2` (personajele, pozele, cheile); dacă Taifas nu există în acel browser, deschiderea e anulată ca să nu creeze o bază goală care l-ar strica. Se copiază: numele, poza de profil, portretul de aproape (`closeRef`), poza întreagă (`photoFull`), descrierea fizică (`physEn`), și al doilea personaj din duo-uri. Reimportul actualizează, nu dublează. Cheile se preiau doar dacă sunt în telefon (nu din seiful Worker).
 
 ## Teste
-`test-animas-100.py` (Playwright, Claude și Runware simulate): 120 de verificări în browser + `test-prompt-120.js` (Node, 41 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
+`test-animas-100.py` (Playwright, Claude și Runware simulate): 137 de verificări în browser + `test-prompt-120.js` (Node, 42 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
 Rulare: `python3 test-animas-100.py <dosarul animas>` (lângă el: `fata.jpg`, `corp.jpg`, `clip.webm`).
 
 ## Istoric
 | Versiune | Data | Ce |
 | --- | --- | --- |
+| 1.4 | 20.11.2026 | corpul: MoveNet în telefon (încadrare cap + corp, ce se vede din corp în prompt, proporțiile în clip); semnele distinctive ale feței în prompt; ștergerea clipurilor din galerie (selecție, toate schițele), butoanele sub video |
 | 1.3 | 20.11.2026 | încadrarea pozei de start: capul întreg, restul spre corp, formatul recomandat, mutarea cadrului; repară tăierea ochilor la selfie-uri de aproape în 16:9 |
 | 1.2.1 | 20.11.2026 | schița are durata aleasă (P-Video-2 acceptă 1–20 s; înainte era tăiată greșit la 8 s); peste 20 s, schița are 20 s și se spune |
 | 1.2 | 20.11.2026 | promptul asamblat în aplicație pe strategia fiecărui model, din planul structurat; limita de 2.000 verificată (nu tăiere la 2.500); fazele acțiunilor complexe; corpul ancorat pe ce se vede; mișcare naturală; contor de caractere |

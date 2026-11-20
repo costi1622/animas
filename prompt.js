@@ -31,7 +31,7 @@ const STRAT = {
     lead:'Continuous shot from the first frame.',
     motion:'Smooth natural motion.'}
 };
-const KEEP_FULL = 'Keep the person exactly as in the first frame: the same face, hair, body build, height, shoulder width, proportions and silhouette, the same clothes and fit, the same place and light. Do not redraw, reshape, slim, enlarge or idealise the body; proportions stay constant in every frame, including while moving.';
+const KEEP_FULL = 'Keep the person exactly as in the first frame: the same face and distinctive features (moles, freckles, tattoos, glasses, jewelry), hair, body build, height, shoulder width, proportions and silhouette, the same clothes and fit, the same place and light. Do not redraw, reshape, slim, enlarge or idealise the body; proportions stay constant in every frame, including while moving.';
 const KEEP_SHORT = 'Keep the same face, body build, proportions, clothes and place as the first frame in every frame; do not reshape the body.';
 const RULE_FULL = 'Perform only these actions, in this order, each one clearly visible and fully completed; no extra gestures, no extra people, no cuts. Photorealistic real footage.';
 const RULE_SHORT = 'Only these actions, in this order, each completed; no cuts.';
@@ -50,6 +50,8 @@ function buildPrompt(mk, plan, {audio = false, sec} = {}, level = 0){
   const L = [st.lead];
   if(P.scene) L.push(String(P.scene).trim());
   if(level < 3 && P.visible) L.push('Visible in the first frame: ' + String(P.visible).trim().replace(/\.+$/, '') + '.');
+  // 1.4: încadrarea măsurată în telefon: modelul nu inventează părți ale corpului care nu sunt în poza de start
+  if(level < 3 && P.framing) L.push('Framing: ' + String(P.framing).trim().replace(/\.+$/, '') + '; keep this framing unless the camera line says otherwise, and do not invent body parts that are outside the first frame.');
   L.push(level < 2 ? KEEP_FULL : KEEP_SHORT);
   const ph = level < 5;
   if(st.time === 'stamps') for(const s of steps) L.push(`[${fmtT(s.t0)}–${fmtT(s.t1)} s] ${stepText(s, ph)}.`);
