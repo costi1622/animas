@@ -6,7 +6,12 @@
    chk:{idClip:{ok, why, jump}}, upd} — `upd` se schimbă la orice modificare, ca Taifas să știe să copieze din nou. */
 'use strict';
 const CS_V = 1;
-const CS_ROLES = [['vorb', '🗣 Vorbește'], ['asc', '👂 Ascultă'], ['activ', '🏠 Ce face'], ['vorb2', '🗣 Vorbește (2)'], ['gand', '🤔 Se gândește'], ['ras', '😄 Râde'], ['priv', '👀 Privește într-o parte'], ['bye', '👋 La revedere']];
+// 1.8: 30 roluri standard. Primele 8 păstrează exact ID-urile vechi pentru compatibilitate.
+const CS_ROLES = [
+  ['vorb','🗣 Vorbește'],['asc','👂 Ascultă'],['activ','🏠 Ce face'],['vorb2','🗣 Vorbește (2)'],['gand','🤔 Se gândește'],['ras','😄 Râde'],['priv','👀 Privește într-o parte'],['bye','👋 La revedere'],
+  ['smile','😊 Zâmbește'],['smile2','🙂 Zâmbet discret'],['nod','👍 Dă din cap'],['agree','👌 Aprobă'],['curious','❓ Curioasă'],['surprised','😮 Surprinsă'],['concern','🤍 Îngrijorată'],['think2','💭 Reflectează'],['listen2','👂 Ascultă atent'],['lookdown','↘ Privește în jos'],['lookup','↗ Privește în sus'],['left','👀 Privește stânga'],['right','👀 Privește dreapta'],['hair','💇 Își aranjează părul'],['sip','☕ Bea ceva'],['phone','📱 Verifică telefonul'],['stretch','🙆 Se întinde'],['shift','🪑 Își schimbă poziția'],['wave','👋 Salută'],['greet','☺️ Salută cu zâmbet'],['calm','🌿 Stare relaxată'],['attentive','✨ Atenție spre cameră']
+];
+const CS_META = Object.fromEntries(CS_ROLES.map(([id],i) => [id,{group: ['vorb','vorb2'].includes(id) ? 'talk' : ['asc','nod','agree','listen2','attentive'].includes(id) ? 'listen' : ['gand','think2','curious','concern','surprised'].includes(id) ? 'think' : id === 'bye' || id === 'wave' ? 'bye' : 'idle', loop:!['bye','sip','phone','hair','stretch','shift','wave'].includes(id), transition:['bye','sip','phone','hair','stretch','shift','wave'].includes(id) ? 'action' : 'soft'}]));
 const CS_TXT = {
   vorb:'talking to the camera in a relaxed conversation, the mouth moving naturally as when speaking, small natural head movements, eyebrows and expressions changing with the words, blinking naturally',
   vorb2:'telling something with feeling, the mouth moving naturally as when speaking, a small smile coming and going, slight nods and head tilts, blinking naturally',
@@ -15,7 +20,30 @@ const CS_TXT = {
   gand:'thinking for a moment, eyes glancing up and to the side, lips pressed together, then looking back at the camera',
   ras:'laughing naturally at something funny, the laugh softening into a smile, then looking back at the camera',
   priv:'glancing away to the side for a second as if something caught their attention, then looking back at the camera with a small smile',
-  bye:'smiling and waving goodbye at the camera with one hand, then reaching towards the screen to end the call'};
+  bye:'smiling and waving goodbye at the camera with one hand, then reaching towards the screen to end the call',
+  smile:'giving the camera a warm, natural smile, holding it briefly, then relaxing the expression',
+  smile2:'a subtle closed-mouth smile, soft eyes, a natural blink, then returning to a neutral attentive expression',
+  nod:'slowly nodding once or twice in agreement while maintaining eye contact with the camera',
+  agree:'showing a small affirmative expression and a gentle nod, then returning to a relaxed listening pose',
+  curious:'raising the eyebrows slightly with a curious expression, tilting the head a little, then relaxing',
+  surprised:'a brief natural look of surprise, eyebrows lifting and eyes widening slightly, then softening into a smile',
+  concern:'showing a brief empathetic, concerned expression, a slight head tilt, then a reassuring gentle look',
+  think2:'pausing thoughtfully, looking slightly upward, blinking, then returning attention to the camera',
+  listen2:'listening closely with a focused expression, a small nod and natural blink, mouth relaxed and closed',
+  lookdown:'briefly lowering the gaze as if thinking, then looking back at the camera',
+  lookup:'briefly glancing upward as if recalling something, then returning eye contact',
+  left:'turning the eyes and head slightly to the left, then gently returning to the camera',
+  right:'turning the eyes and head slightly to the right, then gently returning to the camera',
+  hair:'briefly brushing or arranging the hair with one hand, then returning the hand out of frame and looking at the camera',
+  sip:'taking a small, natural sip from a cup, lowering it, then looking back at the camera',
+  phone:'briefly glancing down at a phone, making a small tap, then looking back at the camera',
+  stretch:'making a small comfortable shoulder and upper-body stretch, then settling back into the original position',
+  shift:'subtly adjusting posture and settling comfortably, keeping the same camera framing',
+  wave:'giving a small friendly wave toward the camera, then lowering the hand',
+  greet:'looking into the camera with a friendly greeting smile and a small nod',
+  calm:'remaining relaxed, breathing naturally, blinking and making tiny natural head movements',
+  attentive:'maintaining warm eye contact with the camera, natural blinking and tiny attentive nods'
+};
 const CS_ENV = {casa:'relaxing at home, shifting slightly into a comfortable position, glancing at the camera', pat:'lying comfortably in bed, head on the pillow, relaxed, glancing at the camera',
   bucatarie:'in the kitchen, busy with something for a moment, then glancing back at the camera', strada:'walking outside, the phone moving slightly with the steps, glancing at the camera',
   parc:'outdoors, a light breeze moving the hair, glancing at the camera', cafenea:'sitting in a cafe, taking a small sip from a cup, then looking at the camera',
@@ -30,13 +58,13 @@ const CS = {place:'toate', tick:null};
 const saveSets = () => DB.set('callsets', callsets);
 const csFind = (charId, place) => callsets.find(s => s.charId === charId && s.place === place);
 const csClip = id => clips.find(x => x.id === id);
-function csTouch(s){ const c = charById(s.charId); s.tid = c && c.srcId || null; s.upd = Date.now(); return saveSets(); }
+function csTouch(s){ const c = charById(s.charId); s.tid = c && c.srcId || null; s.roles = {...CS_META, ...(s.roles || {})}; s.upd = Date.now(); return saveSets(); }
 function csGet(charId, place, make){
   let s = csFind(charId, place);
-  if(!s && make){ s = {v:CS_V, id:uid(), charId, tid:null, place, frame:null, clips:{}, chk:{}, mk:'kling4', sec:5, at:Date.now(), upd:Date.now()}; callsets.push(s); }
+  if(!s && make){ s = {v:CS_V, id:uid(), charId, tid:null, place, frame:null, clips:{}, roles:CS_META, chk:{}, mk:'kling4', sec:5, at:Date.now(), upd:Date.now()}; callsets.push(s); }
   return s;
 }
-const csPrompt = (role, place) => `A front-facing phone video call, handheld phone camera, vertical frame. The same person as in the image, ${role === 'activ' ? (CS_ENV[place] || CS_TXT.activ) : CS_TXT[role]}. Natural, subtle, realistic motion, like a real person on a real phone call. Keep the face, hair, clothes, framing, light and background exactly the same as in the image.${role === 'bye' ? '' : ' The clip starts and ends on exactly the same frame, so it loops seamlessly.'} ${/^vorb/.test(role) ? 'No text.' : 'No talking, no text.'}`;
+const csPrompt = (role, place) => { const meta = CS_META[role] || {loop:true}; const action = role === 'activ' ? (CS_ENV[place] || CS_TXT.activ) : (CS_TXT[role] || CS_TXT.activ); const ending = role === 'bye' ? '' : meta.loop ? ' The clip starts and ends on exactly the same frame, so it loops seamlessly.' : ' Start from the same neutral pose as the call frame, perform the action once, then settle naturally back into that same neutral pose for a clean next-clip transition.'; return `A front-facing phone video call, handheld phone camera, vertical frame. The same person as in the image, ${action}. Natural, subtle, realistic motion, like a real person on a real phone call. Keep the face, hair, clothes, framing, light and background exactly the same as in the image.${ending} ${/^vorb/.test(role) ? 'No text.' : 'No talking, no text.'}`; };
 function csParams(s){
   const mk = CS_MODELS.includes(s.mk) ? s.mk : 'kling4', m = MODELE[mk];
   const sec = m.dur.includes(+s.sec) ? +s.sec : m.dur.includes(5) ? 5 : m.dur.find(x => x >= 4) || m.dur[0];
@@ -192,7 +220,7 @@ function renderCallSet(){
       <button class="sm" ${s && s.frame && !jb ? '' : 'disabled'} onclick="csMake(['${r}'])">${x ? '↻ Refă' : 'Fă'}</button><button class="sm ghost" onclick="csPick('${r}')">Alege</button>
       ${x && k && !k.ok && !k.wait ? `<button class="sm ghost" onclick="csRecheck('${r}')">Verifică iar</button>` : ''}${x ? `<button class="sm ghost" onclick="csClear('${r}')" aria-label="Scoate">✕</button>` : ''}</div></div>`;
   };
-  el.innerHTML = `<section class="box"><h3>Set pentru apel · ${esc(c.name)}</h3>
+  el.innerHTML = `<section class="box"><h3>Set pentru apel · ${esc(c.name)}</h3><p class="muted">Bibliotecă extinsă · ${CS_ROLES.length} roluri standard</p>
     ${c.srcId ? `<p class="muted">Taifas îl preia singur când îl deschizi și îl folosește în apelurile video cu ${esc(c.name)}, fără cost în apel (Taifas → Setări → Apeluri → 📚).</p>` : '<p class="warn">Personajul nu e din Taifas: setul se poate face, dar Taifas nu-l vede. Importă personajul din Taifas (Personaje → Importă din Taifas) și fă setul pe cel importat.</p>'}
     <label>Locul<select onchange="csSet('place', this.value)">${CS_PLACES.map(([k, n]) => `<option value="${k}" ${k === CS.place ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
     <div class="csframe">${s && s.frame ? `<img data-k="${s.frame}" alt="">` : '<div class="empty">Fără imagine de apel</div>'}<div>
@@ -203,7 +231,7 @@ function renderCallSet(){
     <p class="muted">Un clip: ${usdC(p.usd)} (720p, ${p.sec} s). Sunetul clipurilor nu se aude în apel (vorbește vocea din Taifas).</p>
     <div class="csroles">${CS_ROLES.map(row).join('')}</div>
     <div class="row wrap"><button id="csAll" ${s && s.frame && miss.length ? '' : 'disabled'} onclick="csMake(${JSON.stringify(miss).replace(/"/g, "'")})">Fă ce lipsește${miss.length ? ` (${miss.length} · ${usdC(p.usd * miss.length)})` : ''}</button>${s ? '<button class="ghost" onclick="csDelete()">Șterge setul</button>' : ''}</div>
-    <p class="muted" id="csSum">${ok}/${CS_ROLES.length} clipuri merg pentru apel. Esențiale: Vorbește, Ascultă, Ce face; restul fac apelul mai viu.</p></section>`;
+    <p class="muted" id="csSum">${ok}/${CS_ROLES.length} clipuri merg pentru apel. Primele 8 păstrează compatibilitatea cu seturile vechi; celelalte extind reacțiile și acțiunile.</p></section>`;
   hydrate(el);
 }
 function csTick(on){ clearInterval(CS.tick); CS.tick = on ? setInterval(() => { const c = charById(C.charId), s = c && csFind(c.id, CS.place); if(s && (csJobs(s).length || Object.values(s.chk).some(k => k.wait))) renderCallSet(); }, 2500) : null; }
