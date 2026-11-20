@@ -1,6 +1,6 @@
 # Animas — documentație
 
-Versiunea **1.7** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
+Versiunea **1.7.1** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
 Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · publicare: arhiva ZIP urcată în rădăcina repo-ului, workflow-ul `publica.yml` o dezarhivează și o publică pe GitHub Pages.
 
 ## Principii
@@ -57,6 +57,10 @@ MoveNet Lightning rulează în telefon prin TensorFlow.js din face-api (`faceapi
 - **Semnele distinctive** (alunițe, pistrui, tatuaje, ochelari, bijuterii, machiaj) intră în descrierea „ce se vede” și în regula de identitate.
 - **Proporțiile în clip:** rapoarte care nu depind de distanță (umeri/trunchi, șolduri/umeri, braț/antebraț, coapsă/gambă), comparate cu poza de start pe cele 8 cadre; mediana abaterilor → procent (5% → 90, 10% → 80 = pragul, 15% → 70). Aproximativ: unghiul și poziția schimbă măsurătorile; nu măsoară forme de sub haine.
 
+## 1.7.1 — „Alege” din toată galeria
+- Bug 1.7: „Alege” / „Din clipurile mele” arătau doar clipurile înregistrate pe personajul selectat; cele făcute cu „Fără personaj” sau cu o copie mai veche a personajului nu apăreau („nu ai încă clipuri”). Acum: toată galeria (întâi cele cu personajul, apoi restul, cu eticheta lor), atingi miniatura → clipul rulează sus.
+- La verificarea pentru apel se măsoară și fața față de personajul setului (ArcFace); sub 64% → „pare altă persoană” (avertisment).
+
 ## Noutățile 1.7 — 📞 setul pentru apel (Taifas)
 - Fila **📞 Apel** (lângă „Un clip” și „Poveste lungă”): personajul și poza de start de sus; formatul trece pe 9:16.
 - **Imaginea de apel**: cadrul din care pornesc toate clipurile și în care se întorc. „📸 Selfie de apel” scrie scena (selfie, haine de zi cu zi, locul ales) pentru „Generează poza”; „Poza de start → imagine de apel”; „Din clipurile mele” → poza de start a unui clip făcut deja.
@@ -103,12 +107,13 @@ Fișierul se citește imediat și se aduce la JPEG (≤ 2.400 px); dacă nu se p
 Taifas și Animas sunt pe aceeași adresă (`costi1622.github.io`), deci în același Chrome văd aceeași memorie a telefonului. Animas **doar citește** baza `taifas2` (personajele, pozele, cheile); dacă Taifas nu există în acel browser, deschiderea e anulată ca să nu creeze o bază goală care l-ar strica. Se copiază: numele, poza de profil, portretul de aproape (`closeRef`), poza întreagă (`photoFull`), descrierea fizică (`physEn`), și al doilea personaj din duo-uri. Reimportul actualizează, nu dublează. Cheile se preiau doar dacă sunt în telefon (nu din seiful Worker).
 
 ## Teste
-`test-animas-100.py` (Playwright, Claude și Runware simulate): 213 verificări în browser + `test-prompt-120.js` (Node, 43 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
+`test-animas-100.py` (Playwright, Claude și Runware simulate): 216 verificări în browser + `test-prompt-120.js` (Node, 43 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
 Rulare: `python3 test-animas-100.py <dosarul animas>` (lângă el: `fata.jpg`, `corp.jpg`, `clip.webm`).
 
 ## Istoric
 | Versiune | Data | Ce |
 | --- | --- | --- |
+| 1.7.1 | 20.11.2026 | „Alege” din toată galeria, cu previzualizare; fața măsurată la verificarea pentru apel |
 | 1.7 | 20.11.2026 | 📞 setul pentru apel: imaginea de apel, 8 roluri, verificarea pentru apel, preluat de Taifas 14.7 |
 | 1.6 | 20.11.2026 | povești lungi; cel mai bun din 2; reparatul feței; mărire și fluidizare; voce în română + buze; alegerea automată a modelului; fișa completă a personajului |
 | 1.5 | 20.11.2026 | cadrul final ancorat; măsurarea corpului de încredere (rapoarte doar când poziția le lasă comparabile, media în loc de mediană); „Refă” când fața sau corpul au deviat; vârsta la import și la poze; urcarea pozelor cu mesaje clare; refacerea dintr-o schiță nu mai lasă P-Video-2 ca model final |
