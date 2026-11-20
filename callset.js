@@ -53,12 +53,12 @@ async function csCheck(clip, frame, charId){
   const sys = 'You check short video clips that will be used as the animation of a phone video call. Judge only what is visible in the frames. Answer ONLY with JSON.';
   const content = [];
   for(const f of fr) content.push(await imgBlock(f, 512));
-  content.push({type:'text', text:'For ALL frames: "adult" = the person clearly looks like an adult; "everyday" = a natural motion that fits a video call (talking, listening, nodding, smiling, laughing, thinking, waving, glancing away, small natural activity); "selfie" = framed like a phone video call (face visible, roughly facing the camera); "in_bikini" = true if the person is wearing a bikini or two-piece swimsuit in any frame, otherwise false; "outfit_desc" = short description in Romanian of what the person is wearing (e.g. "bikini negru", "tricou alb și blugi", "rochie de vară"). JSON: {"adult":true,"everyday":true,"selfie":true,"in_bikini":false,"outfit_desc":"...","why":"one short reason in Romanian when adult or everyday is false"}'});
+  content.push({type:'text', text:'For ALL frames: "adult" = the person clearly looks like an adult; "everyday" = a natural motion that fits a video call (talking, listening, nodding, smiling, laughing, thinking, waving, glancing away, small natural activity — do NOT set everyday=false solely because the person wears a bikini, swimwear, or a revealing top); "selfie" = framed like a phone video call (face visible, roughly facing the camera); "in_bikini" = true if the person is wearing a bikini or two-piece swimsuit in any frame, otherwise false; "outfit_desc" = short description in Romanian of what the person is wearing (e.g. "bikini negru", "top și pantaloni scurți", "tricou alb și blugi"). JSON: {"adult":true,"everyday":true,"selfie":true,"in_bikini":false,"outfit_desc":"...","why":"one short reason in Romanian ONLY when adult is false or the motion itself is unnatural"}'});
   const {text} = await claudeCall(sys, content, {max:260});
   const j = jsonOut(text), ok = j.adult === true && j.everyday === true;
   const in_bikini = j.in_bikini === true;
   const outfit_desc = String(j.outfit_desc || '').trim().slice(0, 120);
-  return {ok, selfie:j.selfie !== false, in_bikini, outfit_desc, why:ok ? '' : String(j.why || 'nu e potrivit pentru apel').slice(0, 140), jump, face, at:Date.now()};
+  return {ok, selfie:j.selfie !== true, in_bikini, outfit_desc, why:ok ? '' : String(j.why || 'nu e potrivit pentru apel').slice(0, 140), jump, face, at:Date.now()};
 }
 // diferența medie (0–100) între două imagini, micșorate la 36×64, alb-negru
 async function csDiff(a, b){
