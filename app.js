@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.2.1';
+const APP_VER = '1.3';
 
 /* ───────── utilitare ───────── */
 const $ = s => document.querySelector(s);
@@ -27,18 +27,38 @@ async function toJpeg(blob, px = 1280, q = .92){
   } finally { URL.revokeObjectURL(u); }
 }
 const ASPECT = {'9:16':9 / 16, '16:9':16 / 9, '1:1':1};
-// decupează poza la formatul ales, cu fața în cadru (cea mai mare zonă posibilă), latura lungă cel mult 1280
-async function cropAspect(blob, aspect, box){
+/* 1.3: încadrarea. Capul întreg în cadru (fața + ~50% deasupra pentru frunte și păr), puțin aer deasupra capului, iar restul
+   cadrului merge în jos, spre corp. 1.0–1.2 puneau bărbia la 38% din înălțime: la un selfie de aproape în 16:9 tăia ochii și
+   fruntea (și scorul feței scădea, pentru că fața tăiată se măsoară prost). shift = mutarea ta (pași de 10% din cadru). */
+function cropRect(W, H, aspect, box, shift = 0){
+  const r = ASPECT[aspect] || 9 / 16;
+  let w = W, h = Math.round(W / r); if(h > H){ h = H; w = Math.round(H * r); }
+  let x = Math.round((W - w) / 2), y = Math.round((H - h) / 2), cut = false;
+  if(box){
+    const top = Math.max(0, box.y - box.h * .5), bot = Math.min(H, box.y + box.h * 1.12), cx = box.x + box.w / 2;   // capul cât există în poză
+    x = Math.round(cx - w / 2);
+    if(bot - top + h * .06 <= h) y = Math.round(top - h * .06);          // capul încape: aer deasupra, restul spre corp
+    else { y = Math.round(box.y + box.h * .45 - h / 2); cut = true; }     // nu încape: ochii la mijloc, capul tăiat (spus)
+  }
+  y += Math.round(shift * h * .1);
+  x = Math.max(0, Math.min(W - w, x)); y = Math.max(0, Math.min(H - h, y));
+  if(box && !cut) cut = Math.max(0, box.y - box.h * .5) < y - 2 || Math.min(H, box.y + box.h * 1.12) > y + h + 2 || box.x < x - 2 || box.x + box.w > x + w + 2;
+  return {x, y, w, h, cut, kept:Math.round(100 * w * h / (W * H)), slackY:H - h, slackX:W - w};
+}
+// formatul care păstrează capul întreg și cea mai mare parte din poză, dintre cele permise de model
+function bestAspect(W, H, box, allowed){
+  let best = null;
+  for(const a of allowed){ const c = cropRect(W, H, a, box); const sc = (c.cut ? 0 : 1000) + c.kept; if(!best || sc > best.sc) best = {a, sc, c}; }
+  return best && best.a;
+}
+async function cropAspect(blob, aspect, box, shift = 0){
   const u = URL.createObjectURL(blob);
   try{
-    const im = await loadImg(u), W = im.naturalWidth, H = im.naturalHeight, r = ASPECT[aspect] || 9 / 16;
-    let w = W, h = Math.round(W / r); if(h > H){ h = H; w = Math.round(H * r); }
-    const cx = box ? box.x + box.w / 2 : W / 2, cy = box ? box.y + box.h * .9 : H / 2;
-    const x = Math.round(Math.max(0, Math.min(W - w, cx - w / 2))), y = Math.round(Math.max(0, Math.min(H - h, cy - h / 2.6)));
-    const s = Math.min(1, 1280 / Math.max(w, h)), cv = document.createElement('canvas');
-    cv.width = Math.round(w * s); cv.height = Math.round(h * s);
-    const g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(im, x, y, w, h, 0, 0, cv.width, cv.height);
-    return await cvBlob(cv, .93);
+    const im = await loadImg(u), W = im.naturalWidth, H = im.naturalHeight, c = cropRect(W, H, aspect, box, shift);
+    const s = Math.min(1, 1280 / Math.max(c.w, c.h)), cv = document.createElement('canvas');
+    cv.width = Math.round(c.w * s); cv.height = Math.round(c.h * s);
+    const g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(im, c.x, c.y, c.w, c.h, 0, 0, cv.width, cv.height);
+    const b = await cvBlob(cv, .93); b.crop = {...c, W, H}; return b;
   } finally { URL.revokeObjectURL(u); }
 }
 const dayKey = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
@@ -98,7 +118,7 @@ function renderCreate(){
   hydrate(ch);
   renderStart(); renderOpts(); renderPrompt(); renderJobs(); renderLast();
 }
-function pickChar(id){ C.charId = id || null; C.start = null; C.startSrc = ''; C.score = null; renderCreate(); }
+function pickChar(id){ C.charId = id || null; C.start = null; C.startRaw = null; C.crop = null; C.startSrc = ''; C.score = null; renderCreate(); }
 function renderStart(){
   const c = charById(C.charId), box = $('#cStart');
   $('#btnProfil').disabled = !c;
@@ -106,16 +126,30 @@ function renderStart(){
   if(!C.start){ box.innerHTML = `<div class="empty">${c ? 'Alege poza de start: profilul, o poză urcată sau o scenă generată.' : 'Urcă o poză de start.'}</div>`; return; }
   const u = URL.createObjectURL(C.start);
   box.innerHTML = `<img src="${u}" alt="poza de start" class="aspect-${S.aspect.replace(':', 'x')}"><div class="badge" id="cScore">${scoreTxt(C.score)}</div>`;
+  // 1.3: cât din poză rămâne, dacă se taie capul, ce format e mai bun, mutarea cadrului
+  const k = C.crop, el = $('#cCrop'); if(!el) return;
+  if(!k){ el.innerHTML = ''; return; }
+  const m = MODELE[S.mk] || MODELE.kling4f, best = bestAspect(k.W, k.H, C.box, m.aspects);
+  const can = k.slackY > 0 || (C.shift || 0) !== 0;
+  el.innerHTML = `<div class="muted">${S.aspect} păstrează ${k.kept}% din poză${C.box ? '' : ' · fața nu s-a găsit: cadrul e pe mijloc'}</div>`
+    + (k.cut ? `<div class="warn">Capul nu încape întreg în ${S.aspect}.</div>` : '')
+    + (best && best !== S.aspect && (k.cut || k.kept < 60) ? `<div class="row"><span class="muted">Recomand ${best}: ${bestKeep(best)}% din poză, capul întreg.</span><button class="sm" onclick="setAspect('${best}')">Pune ${best}</button></div>` : '')
+    + (can ? `<div class="row"><span class="muted">Cadrul:</span><button class="sm ghost" onclick="nudge(-1)">▲ mai sus</button><button class="sm ghost" onclick="nudge(1)">▼ mai jos</button>${C.shift ? `<button class="sm ghost" onclick="nudge(0)">auto</button>` : ''}</div>` : '');
 }
+const bestKeep = a => C.crop ? cropRect(C.crop.W, C.crop.H, a, C.box).kept : 0;
+async function nudge(d){ C.shift = d ? (C.shift || 0) + d : 0; await applyAspect(true); }
 const scoreTxt = s => s === undefined ? 'Fața: se măsoară…' : s == null ? (C.charId ? 'Fața nu se vede' : '') : `Fața: ${s}%${s >= ID_OK ? ' · aceeași persoană' : ' · seamănă slab'}`;
 async function setStart(blob, src){
-  C.startRaw = blob; C.startSrc = src + ':' + uid();
+  C.startRaw = blob; C.box = null; C.boxFor = null; C.shift = 0; C.startSrc = src + ':' + uid();
   await applyAspect();
 }
-async function applyAspect(){
+async function applyAspect(keepShift){
   if(!C.startRaw) return;
-  let box = null; try{ const f = await faceOf(C.startRaw); box = f && f.box; }catch(e){}
-  C.start = await cropAspect(C.startRaw, S.aspect, box); C.score = C.charId && S.checkFace === 'on' ? undefined : null; renderStart();
+  if(!keepShift) C.shift = 0;
+  // fața se caută o singură dată pe poza întreagă (nu la fiecare mutare)
+  if(C.boxFor !== C.startRaw){ let box = null; try{ const f = await faceOf(C.startRaw); box = f && f.box; }catch(e){} C.box = box; C.boxFor = C.startRaw; }
+  C.start = await cropAspect(C.startRaw, S.aspect, C.box, C.shift || 0); C.crop = C.start.crop;
+  C.score = C.charId && S.checkFace === 'on' ? undefined : null; renderStart();
   if(C.score === undefined){ const c = charById(C.charId); try{ C.score = await idScore(c, C.start); }catch(e){ C.score = null; } const el = $('#cScore'); if(el) el.textContent = scoreTxt(C.score); }
 }
 async function useProfile(){ const c = charById(C.charId); if(!c) return; const b = await DB.get(c.photo); if(b) setStart(b, 'profil'); }
@@ -366,7 +400,7 @@ async function saveClip(id){
 async function reuse(id, final, fix){
   const x = clips.find(c => c.id === id); if(!x) return;
   closeSheet();
-  C.charId = x.charId; C.text = x.text || ''; C.startRaw = await DB.get(x.start); C.start = C.startRaw; C.startSrc = 'clip:' + x.id; C.score = x.startScore;
+  C.charId = x.charId; C.text = x.text || ''; C.startRaw = await DB.get(x.start); C.start = C.startRaw; C.crop = null; C.box = null; C.boxFor = null; C.shift = 0; C.startSrc = 'clip:' + x.id; C.score = x.startScore;
   S.aspect = x.aspect || S.aspect; C.prompt = x.draft ? '' : x.prompt; C.edited = false; C.promptKey = x.draft ? '' : promptKey(x.mk); C.nota = x.nota || '';
   C.steps = x.steps || []; C.fits = true; C.secSuggest = null; C.missing = null;
   if(fix){ C.missing = missOf(x); C.prompt = ''; C.edited = false; C.steps = []; S.mk = x.mk; S.res = x.res; S.sec = x.sec; }   // 1.1: același model, plan refăcut

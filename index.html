@@ -47,6 +47,7 @@ ol.steps{margin:6px 0 4px;padding-left:22px;font-size:14px}ol.steps li{margin:3p
 .chip span:last-child{max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #cStart{position:relative;display:flex;justify-content:center}
 #cStart img{max-width:100%;max-height:52vh;border-radius:12px;display:block}
+#cCrop{margin-top:8px;font-size:13px}#cCrop .row{margin:6px 0;flex-wrap:wrap}#cCrop .warn{font-size:13px}
 .badge{position:absolute;left:10px;bottom:10px;background:#000a;padding:4px 10px;border-radius:999px;font-size:13px}
 .seg{background:transparent;color:var(--txt);border:1px solid var(--line);padding:8px 14px;border-radius:999px}.seg.on{background:var(--acc);color:#1a0d08;border-color:var(--acc)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -92,6 +93,7 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
     <section class="box"><h3>Personaj</h3><div class="chips" id="cChars"></div></section>
     <section class="box"><h3>Poza de start</h3>
       <div id="cStart"></div>
+      <div id="cCrop"></div>
       <div class="row wrap">
         <button class="sm ghost" id="btnProfil" onclick="useProfile()">Poza de profil</button>
         <label class="btn sm ghost">Urcă poză<input type="file" accept="image/*" hidden onchange="uploadStart(this)"></label>
