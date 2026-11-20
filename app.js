@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.5';
+const APP_VER = '1.6';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -80,7 +80,7 @@ const DB = {
   set(k, v){ return this._q('readwrite', s => s.put(v, k)); },
   del(k){ return this._q('readwrite', s => s.delete(k)); }
 };
-const DEF = {clKey:'', rwKey:'', clModel:'claude-sonnet-5-5', useClaude:'on', checkSteps:'on', endFrame:'on', mk:'kling4f', res:'720p', sec:5, audio:true, aspect:'9:16', checkFace:'on', costs:{days:{}, claude:0, runware:0}};
+const DEF = {clKey:'', rwKey:'', clModel:'claude-sonnet-5-5', useClaude:'on', checkSteps:'on', endFrame:'on', best2:'off', autoFix:'off', mk:'kling4f', res:'720p', sec:5, audio:true, aspect:'9:16', checkFace:'on', costs:{days:{}, claude:0, runware:0}};
 let S = {...DEF}, chars = [], clips = [], jobs = [];
 const saveS = () => DB.set('settings', S);
 const saveChars = () => DB.set('chars', chars);
@@ -114,7 +114,7 @@ async function checkAges(){
 async function boot(){
   await DB.open();
   S = {...DEF, ...((await DB.get('settings')) || {})};
-  chars = (await DB.get('chars')) || []; clips = (await DB.get('clips')) || []; jobs = (await DB.get('jobs')) || [];
+  chars = (await DB.get('chars')) || []; clips = (await DB.get('clips')) || []; jobs = (await DB.get('jobs')) || []; stories = (await DB.get('stories')) || [];
   try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
   $('#ver').textContent = APP_VER;
   if(!chars.length || !S.rwKey) setTimeout(() => { if(!S.rwKey) toast('Pune cheile în Setări sau preia-le din Taifas.', 5000); }, 800);
@@ -123,6 +123,8 @@ async function boot(){
   go(location.hash.slice(1) || 'creeaza');
   for(const j of jobs) runJob(j, true);
   setTimeout(() => checkAges().catch(() => {}), 1500);
+  for(const st of stories) if(st.state === 'lucru') setTimeout(() => storyNext(st.id), 2000);   // 1.6: poveștile în lucru continuă
+  setMode(S.mode === 'poveste' ? 'poveste' : 'clip');
   if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 function go(v){
@@ -159,6 +161,7 @@ function renderStart(){
   const m = MODELE[S.mk] || MODELE.kling4f, best = bestAspect(k.W, k.H, C.box, m.aspects, C.bbox);
   const can = k.slackY > 0 || (C.shift || 0) !== 0;
   el.innerHTML = `<div class="muted">${S.aspect} păstrează ${k.kept}% din poză${C.box ? '' : ' · fața nu s-a găsit'}${C.view ? ' · în cadru: ' + C.view.ro : C.body ? '' : ' · corpul nu s-a găsit'}</div>`
+    + (C.startSrc.startsWith('generata') && C.genBody != null ? (C.genBody === 'n' ? '<div class="muted">Corpul față de fișă (tot corpul): nu se poate compara (poziția sau încadrarea diferă prea mult)</div>' : `<div class="${C.genBody >= BODY_OK ? 'ok' : 'warn'}">Corpul față de fișă (tot corpul): ${C.genBody}%</div>`) : '')
     + (k.cut ? `<div class="warn">Capul nu încape întreg în ${S.aspect}.</div>` : '')
     + (best && best !== S.aspect && (k.cut || k.kept < 60) ? `<div class="row"><span class="muted">Recomand ${best}: ${bestKeep(best)}% din poză, capul întreg.</span><button class="sm" onclick="setAspect('${best}')">Pune ${best}</button></div>` : '')
     + (can ? `<div class="row"><span class="muted">Cadrul:</span><button class="sm ghost" onclick="nudge(-1)">▲ mai sus</button><button class="sm ghost" onclick="nudge(1)">▼ mai jos</button>${C.shift ? `<button class="sm ghost" onclick="nudge(0)">auto</button>` : ''}</div>` : '');
@@ -167,6 +170,7 @@ const bestKeep = a => C.crop ? cropRect(C.crop.W, C.crop.H, a, C.box, 0, C.bbox)
 async function nudge(d){ C.shift = d ? (C.shift || 0) + d : 0; await applyAspect(true); }
 const scoreTxt = s => s === undefined ? 'Fața: se măsoară…' : s == null ? (C.charId ? 'Fața nu se vede' : '') : `Fața: ${s}%${s >= ID_OK ? ' · aceeași persoană' : ' · seamănă slab'}`;
 async function setStart(blob, src){
+  C.genBody = null;
   // 1.5: poza se arată imediat, iar erorile se spun (înainte, o poză care nu se putea citi nu făcea nimic, în tăcere)
   $('#cStart').innerHTML = '<div class="empty">Se încarcă poza…</div>'; $('#cCrop').innerHTML = '';
   if(src !== 'profil'){
@@ -211,14 +215,16 @@ async function genStart(){
     let prompt = text;
     if(S.useClaude === 'on' && S.clKey){ const r = await clImagePrompt({text, persona:c && c.desc, aspect:S.aspect, hasFace:!!(c && c.face)}); if(!r.image) throw new Error(r.nota || 'Claude a refuzat cererea.'); prompt = r.image; }
     const refs = [];
-    if(c){ const full = await DB.get(c.full || c.photo).catch(() => null); if(full) refs.push(await dataUri(full, 1024)); const fc = c.face ? await DB.get(c.face).catch(() => null) : null; if(fc) refs.push(await dataUri(fc, 768)); }
+    if(c){ const full = await DB.get(c.full || c.photo).catch(() => null); if(full) refs.push(await dataUri(full, 1024)); const fc = c.face ? await DB.get(c.face).catch(() => null) : null; if(fc) refs.push(await dataUri(fc, 768)); const sd = c.side ? await DB.get(c.side).catch(() => null) : null; if(sd) refs.push(await dataUri(sd, 768)); }
     const [w, h] = {'9:16':[720, 1280], '16:9':[1280, 720], '1:1':[1024, 1024]}[S.aspect];
     btn.textContent = 'Fac poza…';
     const task = kleinTask(prompt, refs, w, h); await rwSend(task);
     const x = await rwWait(task.taskUUID, 'image', {onTick:s => btn.textContent = `Fac poza… ${s} s`});
     if(+x.cost > 0) addCost('runware', +x.cost);
     const b = x.imageBase64Data ? await (await fetch('data:image/jpeg;base64,' + x.imageBase64Data)).blob() : await fetchBlob(x.imageURL, 'image/jpeg');
-    $('#genBox').hidden = true; await setStart(b, 'generata'); toast('Poza de start e gata' + (+x.cost > 0 ? ' · ' + usdC(+x.cost) : '') + '.');
+    $('#genBox').hidden = true; await setStart(b, 'generata');
+    // 1.6: corpul din poza generată față de poza cu tot corpul din fișă (proporțiile)
+    if(c && c.full){ try{ const f0 = await bodyOf(await DB.get(c.full)), f1 = await bodyOf(b), r = f0 && f1 && bodyCompare(f0, f1); C.genBody = r ? r.pct : 'n'; }catch(e){ C.genBody = 'n'; } renderStart(); } toast('Poza de start e gata' + (+x.cost > 0 ? ' · ' + usdC(+x.cost) : '') + '.');
   }catch(e){ toast(String(e.message || e), 6000); }
   finally{ btn.disabled = false; btn.textContent = 'Generează poza'; }
 }
@@ -234,7 +240,8 @@ function renderOpts(){
   $('#oAspect').innerHTML = ['9:16', '16:9', '1:1'].map(a => `<button class="seg ${a === S.aspect ? 'on' : ''}" ${m.aspects.includes(a) ? '' : 'disabled'} onclick="setAspect('${a}')">${a}</button>`).join('');
   const au = $('#oAudio'); au.disabled = m.audio !== 'switch'; au.checked = m.audio === 'always' ? true : m.audio === 'off' ? false : !!S.audio;
   $('#oAudioNote').textContent = m.audio === 'always' ? 'Kling pune mereu sunet; îl descrii în prompt.' : m.audio === 'off' ? 'fără sunet' : '';
-  renderCostLine(); saveS();
+  renderCostLine(); saveS(); renderRec();
+  const b2 = $('#oBest2'); if(b2) b2.checked = S.best2 === 'on';
 }
 function setOpt(k, v){ S[k] = k === 'sec' ? +v : k === 'audio' ? !!v : v; renderOpts(); }
 async function setAspect(a){ S.aspect = a; renderOpts(); await applyAspect(); }
@@ -250,7 +257,8 @@ function renderCostLine(){
   const f = clipCost(true), d = clipCost(false), today = ((S.costs || {}).days || {})[dayKey()] || 0;
   el.innerHTML = `Schiță: <b>${usdC(d.usd)}</b> · Final: <b>${f.min ? 'de la ' : ''}${usdC(f.usd)}</b>${f.min ? ' <span class="muted">(preț 1080p nepublicat; costul real apare după clip)</span>' : ''} · Azi: ${usdC(today)}`;
   if(+S.sec > 20) el.innerHTML += ` <span class="muted">(schița: 20 s, maximul P-Video-2)</span>`;
-  const bd = $('#btnDraft'), bf = $('#btnFinal'); if(bd) bd.textContent = `Schiță · ${usdC(d.usd)}`; if(bf) bf.textContent = `Clip final · ${f.min ? '≥' : ''}${usdC(f.usd)}`;
+  const n2 = S.best2 === 'on' ? 2 : 1, x2 = n2 > 1 ? ' (×2)' : '';
+  const bd = $('#btnDraft'), bf = $('#btnFinal'); if(bd) bd.textContent = `Schiță · ${usdC(d.usd * n2)}${x2}`; if(bf) bf.textContent = `Clip final · ${f.min ? '≥' : ''}${usdC(f.usd * n2)}${x2}`;
 }
 function renderPrompt(){
   $('#cText').value = C.text;
@@ -275,20 +283,27 @@ function renderPrompt(){
 }
 const fmtS = v => String(Math.round(v * 10) / 10).replace('.', ',');
 async function useSuggest(){ if(!C.secSuggest) return; setOpt('sec', C.secSuggest); const b = $('#btnPrep'); b.disabled = true; b.textContent = 'Claude refă planul…'; try{ await preparePrompt(); }catch(e){ toast(e.message, 6000); } finally{ b.disabled = false; b.textContent = 'Pregătește promptul'; } }
-function onText(v){ C.text = v; C.missing = null; }
+function onText(v){ C.text = v; C.missing = null; clearTimeout(onText.t); onText.t = setTimeout(renderRec, 400); }
 function onPromptEdit(v){ C.prompt = v; C.edited = true; renderLen(); }
 // 1.2: câte caractere are promptul (Runware: cel mult 2.000)
 function renderLen(){ const el = $('#pLen'); if(!el) return; const n = String(C.prompt || '').trim().length; el.className = n > PROMPT_MAX ? 'errtxt' : 'muted'; el.textContent = `${n.toLocaleString('ro-RO')} / ${PROMPT_MAX.toLocaleString('ro-RO')} caractere` + (n > PROMPT_MAX ? ' — prea lung: Runware nu-l primește. Scurtează-l.' : ''); }
+// 1.6: planul + promptul pentru orice scenă (clip sau poveste), fără să depindă de ecranul Creează
+async function planFor({text, start, mk, sec, audio, c, missing, framing}){
+  const m = MODELE[mk];
+  if(mk === SCHITA.model) sec = draftSec(sec);
+  return clVideoPrompt({text, start, mk, sec, audio:m.audio === 'always' || (m.audio === 'switch' && audio), persona:c && c.desc, missing, framing, anchorEnd:anchorOn(mk)});
+}
 async function preparePrompt(mk = S.mk, sec = +S.sec, audio = S.audio){
   if(!C.start) throw new Error('Alege întâi poza de start.');
   if(!C.text.trim()) throw new Error('Scrie ce să facă personajul.');
   if(S.useClaude !== 'on' || !S.clKey){ C.prompt = C.text; C.steps = []; C.fits = true; C.nota = 'fără Claude: textul tău merge direct la model'; C.edited = false; C.promptKey = promptKey(mk); renderPrompt(); return C.prompt; }
   const c = charById(C.charId), m = MODELE[mk];
   if(mk === SCHITA.model) sec = draftSec(sec);
-  const r = await clVideoPrompt({text:C.text, start:C.start, mk, sec, audio:m.audio === 'always' || (m.audio === 'switch' && audio), persona:c && c.desc, missing:C.missing, framing:C.view && C.view.en, anchorEnd:anchorOn(mk)});
+  const r = await planFor({text:C.text, start:C.start, mk, sec, audio, c, missing:C.missing, framing:C.view && C.view.en});
+  C.plan = r.plan || null;
   if(r.plan && r.plan.endPose !== C.endPose){ C.endPose = r.plan.endPose; C.end = null; C.endFor = null; C.endScore = null; }
   if(!r.video) throw new Error(r.nota || 'Claude a refuzat cererea.');
-  C.prompt = r.video; C.steps = r.steps; C.fits = r.fits; C.secSuggest = r.secSuggest; C.nota = r.nota + ' · ' + usdC(r.usd); C.edited = false; C.promptKey = promptKey(mk); renderPrompt();
+  C.prompt = r.video; C.steps = r.steps; C.fits = r.fits; C.secSuggest = r.secSuggest; C.nota = r.nota + ' · ' + usdC(r.usd); C.edited = false; C.promptKey = promptKey(mk); renderPrompt(); renderRec();
   return C.prompt;
 }
 /* 1.5: cadrul final ancorat. Din poza de start (reperul 1) și portretul de aproape (reperul 2), FLUX.2 klein 9B face ultima imagine
@@ -296,14 +311,16 @@ async function preparePrompt(mk = S.mk, sec = +S.sec, audio = S.audio){
    Se verifică fața (ArcFace) și proporțiile corpului față de poza de start; până la 2 încercări, se păstrează cea mai bună.
    Modelul video face apoi tranziția între două imagini cu același corp, în loc să-l reinventeze pe parcurs. */
 const anchorOn = mk => S.endFrame !== 'off' && !!(MODELE[mk] || {}).last;
-async function makeEnd(onStep){
-  if(!C.start || !C.endPose) return null;
-  const c = charById(C.charId), refs = [await dataUri(C.start, 1280)];
+async function makeEnd(onStep){ return makeEndFor({start:C.start, endPose:C.endPose, c:charById(C.charId), onStep}); }
+// 1.6: aceeași funcție pentru clipuri și pentru scenele din povești
+async function makeEndFor({start, endPose, c, onStep}){
+  if(!start || !endPose) return null;
+  const refs = [await dataUri(start, 1280)];
   const fc = c && c.face ? await DB.get(c.face).catch(() => null) : null; if(fc) refs.push(await dataUri(fc, 768));
-  const im = await loadImg(URL.createObjectURL(C.start)), sc = Math.min(1, 1280 / Math.max(im.naturalWidth, im.naturalHeight));
+  const im = await loadImg(URL.createObjectURL(start)), sc = Math.min(1, 1280 / Math.max(im.naturalWidth, im.naturalHeight));
   const w = Math.max(256, Math.round(im.naturalWidth * sc / 16) * 16), h = Math.max(256, Math.round(im.naturalHeight * sc / 16) * 16);
-  const prompt = `Image 1 is the first frame of a video. Create the LAST frame of the same video: exactly the same person as in image 1, with the same face, hair and distinctive features, the same body build, height and proportions, the same clothes and fit, in the same place, with the same light, camera position, lens and framing. Change only the pose: ${C.endPose}.${fc ? ' Image 2 is a close-up of the same face, for facial detail.' : ''} Photorealistic phone photo, natural skin texture, no text.`;
-  const b0 = await bodyOf(C.start).catch(() => null);
+  const prompt = `Image 1 is the first frame of a video. Create the LAST frame of the same video: exactly the same person as in image 1, with the same face, hair and distinctive features, the same body build, height and proportions, the same clothes and fit, in the same place, with the same light, camera position, lens and framing. Change only the pose: ${endPose}.${fc ? ' Image 2 is a close-up of the same face, for facial detail.' : ''} Photorealistic phone photo, natural skin texture, no text.`;
+  const b0 = await bodyOf(start).catch(() => null);
   let best = null;
   for(let i = 0; i < 2; i++){
     if(onStep) onStep(i);
@@ -346,10 +363,13 @@ async function send(final){
     if(isYoung(charById(C.charId))) throw new Error(`Personajul pare sub ${AGE_MIN} de ani: nu se folosește pentru clipuri.`);
     const end = await ensureEnd(mk, btn);
     const startKey = await putBlob('img', C.start), endKey = end && anchorOn(mk) ? await putBlob('img', end) : null;
-    const job = {id:uid(), at:Date.now(), charId:C.charId, text:C.text, prompt:C.prompt, nota:C.nota, steps:C.edited ? [] : (C.steps || []), start:startKey, startScore:C.score ?? null, end:endKey, endPose:C.endPose || '', endScore:endKey ? C.endScore : null, ...p, est:est.usd, estMin:est.min, state:'trimit'};
+    const n2 = S.best2 === 'on' ? 2 : 1, gid = n2 > 1 ? uid() : null;   // 1.6: cel mai bun din 2
+    for(let k = 0; k < n2; k++){
+    const job = {id:uid(), at:Date.now(), charId:C.charId, group:gid, gi:k, text:C.text, prompt:C.prompt, nota:C.nota, steps:C.edited ? [] : (C.steps || []), start:startKey, startScore:C.score ?? null, end:endKey, endPose:C.endPose || '', endScore:endKey ? C.endScore : null, ...p, est:est.usd, estMin:est.min, state:'trimit'};
     jobs.unshift(job); await saveJobs(); renderJobs();
     runJob(job);
-    toast(final ? 'Clipul final a pornit. Poți închide aplicația; continuă la Runware.' : 'Schița a pornit.');
+    }
+    toast((n2 > 1 ? 'Două variante, aleg singur cea mai bună. ' : '') + (final ? 'Clipul final a pornit. Poți închide aplicația; continuă la Runware.' : 'Schița a pornit.'));
   }catch(e){ toast(String(e.message || e), 6000); }
   finally{ btn.disabled = false; renderCostLine(); }
 }
@@ -360,9 +380,13 @@ async function runJob(job, resume, got){
   try{
     if(!job.taskUUID){
       if(resume) throw new Error('Trimiterea s-a întrerupt înainte să ajungă la Runware.');
-      const start = await DB.get(job.start); if(!start) throw new Error('Poza de start lipsește.');
-      const end = job.end ? await DB.get(job.end).catch(() => null) : null;
-      const task = await videoTask({mk:job.mk, res:job.res, sec:job.sec, audio:job.audio, draft:job.draft, prompt:job.prompt, start, end});
+      let task;
+      if(job.kind && job.kind !== 'video') task = await postTask(job);   // 1.6: reparat fața, mărit, voce
+      else {
+        const start = await DB.get(job.start); if(!start) throw new Error('Poza de start lipsește.');
+        const end = job.end ? await DB.get(job.end).catch(() => null) : null;
+        task = await videoTask({mk:job.mk, res:job.res, sec:job.sec, audio:job.audio, draft:job.draft, prompt:job.prompt, start, end});
+      }
       job.taskUUID = task.taskUUID; job.state = 'trimis'; await saveJobs();
       try{ await rwSend(task); }
       catch(e){ if(!e.net) delete job.taskUUID; if(!e.net && /insufficient|balance/i.test(e.message)) throw rwFail(e.message.replace(/^Runware:\s*/, '').replace(/\s*\(reîncarcă[^)]*\)$/, '')); throw e; }   // 1.0.2: refuzată la trimitere = n-a pornit
@@ -376,7 +400,8 @@ async function runJob(job, resume, got){
     job.state = 'descarc'; updJob(job);
     const vb = await fetchBlob(x.videoURL || x.mediaURL || x.outputURL, 'video/mp4');
     const cost = +x.cost > 0 ? +x.cost : job.est; addCost('runware', cost);
-    const vid = await putBlob('vid', vb);
+    const vid = await putBlob('vid', vb), rw = {uuid:x.videoUUID || null, url:x.videoURL || null};   // 1.6: codul clipului la Runware, pentru prelucrări
+    if(job.kind && job.kind !== 'video') return finishPost(job, x, vb, vid, rw, cost);
     job.state = 'verific'; updJob(job);
     let frames = [], score = null, th = null;
     try{ frames = await videoFrames(vb, 8); }catch(e){}
@@ -390,9 +415,13 @@ async function runJob(job, resume, got){
     let check = null;
     if(S.checkSteps !== 'off' && S.clKey && job.steps && job.steps.length && frames.length >= 4){ job.state = 'pasi'; updJob(job); try{ check = await clCheckSteps(job.steps, frames); }catch(e){ check = {err:String(e.message || e).slice(0, 160)}; } }
     const clip = {id:uid(), at:Date.now(), charId:job.charId, text:job.text, prompt:job.prompt, nota:job.nota, start:job.start, startScore:job.startScore,
-      mk:job.mk, res:job.res, sec:job.sec, audio:job.audio, draft:job.draft, aspect:job.aspect, cost, costReal:+x.cost > 0, vid, th, score, body, steps:job.steps || [], check, end:job.end || null, endScore:job.endScore || null, endPose:job.endPose || ''};
+      mk:job.mk, res:job.res, sec:job.sec, audio:job.audio, draft:job.draft, aspect:job.aspect, cost, costReal:+x.cost > 0, vid, th, score, body, steps:job.steps || [], check, end:job.end || null, endScore:job.endScore || null, endPose:job.endPose || '',
+      rw, group:job.group || null, storyId:job.storyId || null, seg:job.seg ?? null};
     clips.unshift(clip); await saveClips();
     jobs = jobs.filter(j => j.id !== job.id); await saveJobs();
+    if(job.group) await groupDone(job.group);
+    if(job.storyId) storyNext(job.storyId);
+    if(S.autoFix === 'on' && score && score.avg != null && score.avg < ID_OK && rw.uuid && !job.group) postJob('replace', clip, {res:job.res === '1080p' ? '1080p' : '720p', quiet:true});
     toast(`${job.draft ? 'Schița' : 'Clipul'} e gata · ${usdC(cost)}${score && score.avg != null ? ' · fața ' + score.avg + '%' : ''}${check && check.n ? ` · pași ${check.ok}/${check.n}` : ''}`, 5000);
     if(!$('#v-creeaza').hidden){ renderJobs(); renderLast(); } else if(!$('#v-galerie').hidden) renderGallery();
   }catch(e){
@@ -408,13 +437,44 @@ async function runJob(job, resume, got){
     if(e.taskFailed && !e.credit && /insufficient|balance/i.test(e.message)) e = rwFail(e.message.replace(/^Runware:\s*/, '').replace(/\s*\(reîncarcă[^)]*\)$/, ''));
     if(e.taskFailed) delete job.taskUUID;   // 1.0.2: eșuată la Runware (neplătită): „Reia” o trimite din nou, nu mai întreabă de cea eșuată
     job.state = 'eroare'; job.err = String(e.message || e).slice(0, 300); await saveJobs(); renderJobs();
+    if(job.group) groupDone(job.group);
+    if(job.storyId) storyPause(job.storyId, job.err);
   }
 }
 const JOB_AC = {}, JOB_RW = {};   // 1.0.1: oprirea și ce a răspuns Runware ultima dată, pe lucrare
-const JOB_ST = {trimit:'se trimite', trimis:'trimis', lucru:'Runware lucrează', descarc:'descarc clipul', verific:'verific fața', corp:'verific corpul', pasi:'verific pașii', eroare:'eroare'};
+/* 1.6: rezultatul unei prelucrări devine un clip nou, legat de cel de pornire (parent) */
+async function finishPost(job, x, vb, vid, rw, cost){
+  const src = clips.find(c => c.id === job.src) || {};
+  job.state = 'verific'; updJob(job);
+  let frames = [], th = null; try{ frames = await videoFrames(vb, 8); }catch(e){}
+  if(frames.length) th = await putBlob('th', await toJpeg(frames[Math.min(1, frames.length - 1)], 480, .8));
+  let score = src.score || null, body = src.body || null;
+  if(job.kind === 'replace' && frames.length){ const c = charById(job.charId); if(c) try{ score = await clipScore(c, frames); }catch(e){} try{ body = await bodyScore(await DB.get(src.start), frames); }catch(e){} }
+  const tag = {replace:'fața reparată', upscale:`mărit ${job.opts.res}${job.opts.fps ? ' · ' + job.opts.fps + ' fps' : ''}`, lipsync:'cu voce'}[job.kind];
+  const clip = {...src, id:uid(), at:Date.now(), parent:src.id || null, kind:job.kind, tag, vid, th, rw, cost:cost + (job.ttsCost || 0), costReal:+x.cost > 0, score, body,
+    res:job.kind === 'upscale' ? job.opts.res : job.kind === 'replace' ? job.opts.res : src.res, lipText:job.kind === 'lipsync' ? job.opts.text : src.lipText || '', group:null, alt:false};
+  clips.unshift(clip); await saveClips();
+  jobs = jobs.filter(j => j.id !== job.id); await saveJobs();
+  toast(`Gata: ${tag} · ${usdC(clip.cost)}${job.kind === 'replace' && score && score.avg != null ? ' · fața ' + score.avg + '%' : ''}`, 5000);
+  if(!$('#v-creeaza').hidden){ renderJobs(); renderLast(); } else if(!$('#v-galerie').hidden) renderGallery();
+}
+/* 1.6: cel mai bun din 2 — când ambele variante sunt gata (sau una a eșuat), se alege după față, corp și pași */
+const clipMark = x => (x.score && x.score.avg != null ? x.score.avg : 70) + (x.body && x.body.avg != null ? x.body.avg : 80) + (x.check && x.check.n ? 100 * x.check.ok / x.check.n : 70);
+async function groupDone(gid){
+  if(jobs.some(j => j.group === gid && j.state !== 'eroare')) return;   // mai lucrează una
+  const G2 = clips.filter(x => x.group === gid); if(!G2.length) return;
+  const best = G2.reduce((a, b) => clipMark(b) > clipMark(a) ? b : a);
+  for(const x of G2){ x.best = x === best; x.alt = x !== best; }
+  if(G2.length > 1){ const i = clips.indexOf(best); clips.splice(i, 1); clips.unshift(best); }
+  await saveClips();
+  if(G2.length > 1) toast(`Am ales varianta mai bună: ${best.score && best.score.avg != null ? 'fața ' + best.score.avg + '%' : ''}${best.body && best.body.avg != null ? ' · corpul ' + best.body.avg + '%' : ''}${best.check && best.check.n ? ` · pași ${best.check.ok}/${best.check.n}` : ''}. Cealaltă e în galerie, ca alternativă.`, 6000);
+  if(!$('#v-creeaza').hidden) renderLast(); else if(!$('#v-galerie').hidden) renderGallery();
+}
+const JOB_ST = {voce:'fac vocea', trimit:'se trimite', trimis:'trimis', lucru:'Runware lucrează', descarc:'descarc clipul', verific:'verific fața', corp:'verific corpul', pasi:'verific pașii', eroare:'eroare'};
 function jobHTML(j){
   const m = MODELE[j.mk] || {nume:j.mk}, el = jobTick[j.id] ?? Math.round((Date.now() - j.at) / 1000);
-  return `<div class="job ${j.state === 'eroare' ? 'err' : ''}" id="job-${j.id}"><div><b>${j.draft ? 'Schiță' : 'Final'} · ${esc(m.nume)} ${j.res} · ${j.sec} s</b>
+  const what = j.kind && j.kind !== 'video' ? {replace:'Repar fața', upscale:'Măresc', lipsync:'Voce și buze'}[j.kind] : (j.storyId ? `Poveste · scena ${j.seg + 1}` : j.draft ? 'Schiță' : 'Final') + (j.group ? ` · varianta ${j.gi + 1}/2` : '');
+  return `<div class="job ${j.state === 'eroare' ? 'err' : ''}" id="job-${j.id}"><div><b>${what} · ${esc(m.nume)} ${j.res} · ${j.sec} s</b>
     <div class="muted">${JOB_ST[j.state] || j.state}${j.state !== 'eroare' ? ' · ' + Math.floor(el / 60) + ':' + String(el % 60).padStart(2, '0') : ''} · ${j.estMin ? '≥' : ''}${usdC(j.est)}</div>
     ${j.state === 'lucru' ? rwLine(j, el) : ''}
     ${j.err ? `<div class="errtxt">${esc(j.err)}</div>` : ''}
@@ -459,14 +519,15 @@ function renderLast(){
 function clipCard(x){
   const c = charById(x.charId), m = MODELE[x.mk] || {nume:x.mk}, s = x.score;
   const pick = G.sel && !$('#v-galerie').hidden;
-  return `<div class="card ${pick && G.sel.has(x.id) ? 'picked' : ''}" onclick="cardTap('${x.id}')"><div class="th aspect-${String(x.aspect || '9:16').replace(':', 'x')}"><img data-k="${x.th || x.start}" alt="">${pick ? `<span class="pick">${G.sel.has(x.id) ? '✓' : ''}</span>` : '<span class="play">▶</span>'}${x.draft ? '<span class="tag">schiță</span>' : ''}</div>
+  return `<div class="card ${pick && G.sel.has(x.id) ? 'picked' : ''}" onclick="cardTap('${x.id}')"><div class="th aspect-${String(x.aspect || '9:16').replace(':', 'x')}"><img data-k="${x.th || x.start}" alt="">${pick ? `<span class="pick">${G.sel.has(x.id) ? '✓' : ''}</span>` : '<span class="play">▶</span>'}${x.draft ? '<span class="tag">schiță</span>' : ''}${x.tag ? `<span class="tag t2">${esc(x.tag)}</span>` : ''}${x.alt ? '<span class="tag t3">alternativă</span>' : x.best ? '<span class="tag t3 ok2">ales din 2</span>' : ''}</div>
     <div class="meta"><b>${esc(c ? c.name : 'Fără personaj')}</b><span>${esc(m.nume)} · ${x.res} · ${x.sec} s · ${usdC(x.cost)}</span>${s && s.avg != null ? `<span class="${s.avg >= ID_OK ? 'ok' : 'warn'}">fața ${s.avg}% (min ${s.min}%)</span>` : ''}${x.body && x.body.avg != null ? `<span class="${x.body.avg >= BODY_OK ? 'ok' : 'warn'}">corpul ${x.body.avg}%</span>` : x.body && x.body.why ? '<span class="muted">corpul: nemăsurabil</span>' : ''}${x.check && x.check.n ? `<span class="${x.check.ok === x.check.n ? 'ok' : 'warn'}">pași ${x.check.ok}/${x.check.n}</span>` : ''}<span class="muted">${when(x.at)}</span></div></div>`;
 }
 // 1.4: selecția în galerie, pentru ștergere (una, mai multe, toate schițele)
 const G = {sel:null};
 function renderGallery(){
-  const el = $('#gList');
-  el.innerHTML = clips.length ? clips.map(clipCard).join('') : '<div class="empty">Niciun clip încă.</div>';
+  const el = $('#gList'), own = clips.filter(x => !x.storyId);   // 1.6: scenele poveștilor stau în povestea lor
+  $('#gStories').innerHTML = storyCards();
+  el.innerHTML = own.length ? own.map(clipCard).join('') : (stories.length ? '' : '<div class="empty">Niciun clip încă.</div>');
   const tot = clips.reduce((a, x) => a + (x.cost || 0), 0), drafts = clips.filter(x => x.draft).length;
   $('#gSum').textContent = clips.length ? `${clips.length} clipuri · ${usdC(tot)} în total` : '';
   $('#gBar').innerHTML = !clips.length ? '' : G.sel
@@ -491,8 +552,15 @@ async function openClip(id){
       <button class="ghost" onclick="reuse('${x.id}', false)">Refă / modifică</button>
       <button class="ghost danger" onclick="delClips(['${x.id}'])">🗑 Șterge</button>
     </div>
+    <div class="row wrap posts">
+      <button class="sm ghost" onclick="postSheet('${x.id}', 'replace')" ${clipSrc(x) ? '' : 'disabled'}>🙂 Repară fața</button>
+      <button class="sm ghost" onclick="postSheet('${x.id}', 'upscale')" ${clipSrc(x) ? '' : 'disabled'}>⬆ Mărește</button>
+      <button class="sm ghost" onclick="postSheet('${x.id}', 'lipsync')" ${clipSrc(x) ? '' : 'disabled'}>🗣 Voce</button>
+      ${clipSrc(x) ? '' : '<span class="muted">prelucrările merg pe clipurile făcute din 1.6</span>'}
+    </div>
     <div class="info"><b>${esc(c ? c.name : 'Fără personaj')}</b> · ${x.draft ? 'schiță' : 'final'} · ${esc(m.nume)} ${x.res} · ${x.sec} s${x.audio ? ' · cu sunet' : ''} · ${usdC(x.cost)}${x.costReal ? '' : ' (estimat)'}
     ${s && s.avg != null ? `<div class="${s.avg >= ID_OK ? 'ok' : 'warn'}">Fața: ${s.avg}% în medie, cel mai slab cadru ${s.min}% (${s.seen} din ${s.n} cadre)${x.startScore != null ? ' · poza de start ' + x.startScore + '%' : ''}</div>` : s ? '<div class="muted">Fața nu se vede în cadrele verificate.</div>' : ''}
+    ${x.lipText ? `<div class="muted">Spune: „${esc(x.lipText)}”</div>` : ''}
     ${bodyLine(x)}${x.end ? `<div class="muted">Cadru final ancorat${x.endScore && x.endScore.face != null ? ` (fața ${x.endScore.face}%${x.endScore.body != null ? ', corpul ' + x.endScore.body + '%' : ''})` : ''}.</div>` : ''}
     ${stepsHTML(x)}
     <div class="muted">${when(x.at)}</div>
@@ -539,7 +607,7 @@ async function reuse(id, final, fix){
 // 1.4: șterge unul sau mai multe clipuri din telefon (clipul, miniatura, poza de start dacă nu mai e folosită); spune cât spațiu s-a eliberat
 async function delClips(ids, what){
   ids = ids.filter(id => clips.some(c => c.id === id)); if(!ids.length) return;
-  if(!confirm(`Ștergi ${what || (ids.length === 1 ? 'clipul' : ids.length + ' clipuri')} din telefon? Nu se poate anula.`)) return;
+  if(!window.__noConfirm && !confirm(`Ștergi ${what || (ids.length === 1 ? 'clipul' : ids.length + ' clipuri')} din telefon? Nu se poate anula.`)) return;
   const gone = clips.filter(c => ids.includes(c.id)); clips = clips.filter(c => !ids.includes(c.id)); await saveClips();
   let bytes = 0;
   for(const x of gone){
@@ -554,7 +622,7 @@ async function delClips(ids, what){
 /* ═════════ Personaje ═════════ */
 function renderChars(){
   const el = $('#pList');
-  el.innerHTML = chars.length ? chars.map(c => `<div class="pc" onclick="editChar('${c.id}')"><img data-k="${c.photo}" alt=""><div><b>${esc(c.name)}</b><span class="muted">${c.src === 'taifas' ? 'din Taifas' : 'creat în Animas'}${c.face ? ' · portret de aproape' : ''}</span>${isYoung(c) ? `<span class="warn">blocat: pare sub ${AGE_MIN} de ani</span>` : ''}</div></div>`).join('') : '<div class="empty">Niciun personaj. Importă-le din Taifas sau creează unul nou.</div>';
+  el.innerHTML = chars.length ? chars.map(c => `<div class="pc" onclick="editChar('${c.id}')"><img data-k="${c.photo}" alt=""><div><b>${esc(c.name)}</b><span class="muted">${c.src === 'taifas' ? 'din Taifas' : 'creat în Animas'} · fișa ${1 + !!c.face + !!c.full + !!c.side}/4</span>${isYoung(c) ? `<span class="warn">blocat: pare sub ${AGE_MIN} de ani</span>` : ''}</div></div>`).join('') : '<div class="empty">Niciun personaj. Importă-le din Taifas sau creează unul nou.</div>';
   hydrate(el);
 }
 // imaginile din listă se încarcă din baza de date (o singură dată pe element)
@@ -569,12 +637,14 @@ async function hydrate(root){
 let ed = null;
 function editChar(id){
   const c = id ? charById(id) : null;
-  ed = c ? {...c, photoB:null, faceB:null} : {id:null, name:'', desc:'', photo:null, face:null, photoB:null, faceB:null, ok:false};
+  ed = c ? {...c, photoB:null, faceB:null, fullB:null, sideB:null} : {id:null, name:'', desc:'', photo:null, face:null, full:null, side:null, photoB:null, faceB:null, fullB:null, sideB:null, ok:false};
   sheet(`<h2>${c ? 'Personaj' : 'Personaj nou'}</h2>
     <label>Nume<input id="eName" value="${esc(ed.name)}" maxlength="40"></label>
     <div class="row"><div class="slot"><img id="ePhoto" data-k="${ed.photo || ''}" alt=""><label class="btn sm">Poza de profil<input type="file" accept="image/*" hidden onchange="edFile(this, 'photo')"></label></div>
-      <div class="slot"><img id="eFace" data-k="${ed.face || ''}" alt=""><label class="btn sm ghost">Portret de aproape<input type="file" accept="image/*" hidden onchange="edFile(this, 'face')"></label></div></div>
-    <p class="muted">Portretul de aproape (opțional) ajută verificarea feței și poza de start generată.</p>
+      <div class="slot"><img id="eFace" data-k="${ed.face || ''}" alt=""><label class="btn sm ghost">Față de aproape<input type="file" accept="image/*" hidden onchange="edFile(this, 'face')"></label></div></div>
+    <div class="row"><div class="slot"><img id="eFull" data-k="${ed.full || ''}" alt=""><label class="btn sm ghost">Tot corpul<input type="file" accept="image/*" hidden onchange="edFile(this, 'full')"></label></div>
+      <div class="slot"><img id="eSide" data-k="${ed.side || ''}" alt=""><label class="btn sm ghost">Din profil<input type="file" accept="image/*" hidden onchange="edFile(this, 'side')"></label></div></div>
+    <p class="muted">Fișa completă (1.6): fața de aproape și profilul ajută verificarea feței; poza cu tot corpul e reperul pentru proporții la pozele generate și la cadrele finale.</p>
     <label>Descriere fizică (engleză, pentru modele)<textarea id="eDesc" rows="4">${esc(ed.desc || '')}</textarea></label>
     <button class="ghost sm" id="eDescBtn" onclick="edDescribe()">Claude scrie descrierea din poză</button>
     ${c ? '' : `<label class="chk"><input type="checkbox" id="eOk"> Personajul e creat de mine (AI) sau am acordul persoanei din poză.</label>`}
@@ -584,7 +654,7 @@ function editChar(id){
 async function edFile(inp, which){
   const f = inp.files && inp.files[0]; inp.value = ''; if(!f) return;
   const b = await toJpeg(f, 1600, .93); ed[which + 'B'] = b;
-  $(which === 'photo' ? '#ePhoto' : '#eFace').src = URL.createObjectURL(b);
+  $({photo:'#ePhoto', face:'#eFace', full:'#eFull', side:'#eSide'}[which]).src = URL.createObjectURL(b);
 }
 async function edDescribe(){
   const b = ed.photoB || (ed.photo && await DB.get(ed.photo)); if(!b) return toast('Pune întâi poza de profil.');
@@ -597,7 +667,7 @@ async function edSave(){
   if(!ed.id && !$('#eOk').checked) return toast('Bifează confirmarea despre poză.');
   if(!ed.photo && !ed.photoB) return toast('Pune poza de profil.');
   // vârsta: aceeași regulă ca în Taifas (estimarea din telefon, prag 21)
-  for(const b of [ed.photoB, ed.faceB].filter(Boolean)){
+  for(const b of [ed.photoB, ed.faceB, ed.fullB, ed.sideB].filter(Boolean)){
     try{ const f = await faceOf(b, {age:true}); if(f && f.age != null && f.age < AGE_MIN) return toast(`Persoana din poză pare să aibă ${f.age} ani: Animas nu creează personaje care par sub ${AGE_MIN} ani.`, 7000); }catch(e){}
   }
   let c = ed.id ? charById(ed.id) : null;
@@ -605,6 +675,9 @@ async function edSave(){
   c.name = name; c.desc = $('#eDesc').value.trim();
   if(ed.photoB){ if(c.photo) DB.del(c.photo).catch(() => {}); c.photo = await putBlob('img', ed.photoB); c.full = null; delete c.emb; }
   if(ed.faceB){ if(c.face) DB.del(c.face).catch(() => {}); c.face = await putBlob('img', ed.faceB); delete c.emb; }
+  if(ed.fullB){ if(c.full) DB.del(c.full).catch(() => {}); c.full = await putBlob('img', ed.fullB); }
+  if(ed.sideB){ if(c.side) DB.del(c.side).catch(() => {}); c.side = await putBlob('img', ed.sideB); delete c.emb; }
+  delete c.age;
   await saveChars(); closeSheet(); renderChars(); toast('Salvat.');
 }
 async function delChar(id){
@@ -673,7 +746,7 @@ async function taifasImport(){
 /* ═════════ Setări ═════════ */
 function renderSettings(){
   $('#sCl').value = S.clKey || ''; $('#sRw').value = S.rwKey || '';
-  $('#sUseCl').checked = S.useClaude === 'on'; $('#sFace').checked = S.checkFace === 'on'; $('#sSteps').checked = S.checkSteps !== 'off'; $('#sEnd').checked = S.endFrame !== 'off';
+  $('#sUseCl').checked = S.useClaude === 'on'; $('#sFace').checked = S.checkFace === 'on'; $('#sSteps').checked = S.checkSteps !== 'off'; $('#sEnd').checked = S.endFrame !== 'off'; $('#sFix').checked = S.autoFix === 'on'; $('#sBest2').checked = S.best2 === 'on';
   const c = S.costs || {days:{}}, d = dayKey(), mo = d.slice(0, 7);
   const month = Object.entries(c.days || {}).filter(([k]) => k.startsWith(mo)).reduce((a, [, v]) => a + v, 0);
   $('#sCosts').innerHTML = `Azi: <b>${usdC(c.days[d] || 0)}</b> · Luna aceasta: <b>${usdC(month)}</b><br>Total Runware: ${usdC(c.runware || 0)} · Total Claude: ${usdC(c.claude || 0)}`;

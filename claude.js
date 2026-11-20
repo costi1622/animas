@@ -111,3 +111,20 @@ async function clDescribe(photo, signal){
   if(/^\s*MINOR\b/i.test(text)) { const e = new Error('Persoana din poză pare sub 21 de ani: Animas nu creează personaje care par minore.'); e.minor = true; throw e; }
   return text;
 }
+
+/* 1.6: povestea lungă — Claude o împarte în scene care se leagă: fiecare pornește exact de unde s-a oprit cea dinainte */
+async function clStory({text, total, persona, start}, signal){
+  const sys = `You split a story (written in Romanian) into consecutive video scenes for an image-to-video model. Each scene starts exactly where the previous one ended (its first frame is the previous scene's last frame), so the same person keeps the same face, body, clothes and place unless the story moves on.
+Rules:
+- Total length about ${total} seconds. Each scene 4–10 seconds (use 8–10 for scenes with several actions, 4–6 for a single short action).
+- Each scene: at most 3–4 visible actions, in order, described in Romanian as the user would write them ("se ridică de pe canapea, merge spre fereastră și se uită afară").
+- Keep continuity: a scene must begin from the pose the previous one ended in. Mention spoken words in quotes only if the story has dialogue.
+- Clothes stay on; only outer layers (jacket, coat, scarf, hat, gloves) may be put on or taken off. Leave out anything else and say so in "nota".
+- Only adults. If the story involves a minor or someone who looks like a child, return no scenes and explain in "nota".
+Answer ONLY with JSON: {"title":"short Romanian title","scenes":[{"ro":"…","sec":8}],"nota":"one short line in Romanian"}`;
+  const content = [...(start ? [await imgBlock(start)] : []), {type:'text', text:(persona ? 'Person (description): ' + persona + '\n' : '') + 'Story (Romanian): ' + text}];
+  const {text:t, usd} = await claudeCall(sys, content, {signal, max:2500});
+  const j = jsonOut(t);
+  const scenes = (Array.isArray(j.scenes) ? j.scenes : []).map(x => ({ro:String(x.ro || '').trim(), sec:Math.max(4, Math.min(10, Math.round(+x.sec || 6)))})).filter(x => x.ro).slice(0, 20);
+  return {title:String(j.title || 'Poveste').trim().slice(0, 60), scenes, nota:String(j.nota || '').trim(), usd};
+}

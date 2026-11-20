@@ -1,6 +1,6 @@
 # Animas — documentație
 
-Versiunea **1.5** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
+Versiunea **1.6** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
 Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · publicare: arhiva ZIP urcată în rădăcina repo-ului, workflow-ul `publica.yml` o dezarhivează și o publică pe GitHub Pages.
 
 ## Principii
@@ -19,6 +19,8 @@ Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · public
 | `claude.js` | planul video structurat, verificarea pașilor, promptul pozei, descrierea personajului |
 | `prompt.js` | 1.2: asamblarea promptului video pe strategia fiecărui model, limita de 2.000 de caractere, compactarea fără pierderi de pași |
 | `body.js` | 1.4: corpul cu MoveNet Lightning (17 puncte), încadrarea, ce se vede din corp, proporțiile în clip |
+| `post.js` | 1.6: reparatul feței (P-Video-Replace), mărirea și fluidizarea (P-Video-Upscale), vocea (ElevenLabs v3, română) + buzele (sync lipsync-2) |
+| `story.js` | 1.6: povești lungi din mai multe scene, redarea continuă, salvarea într-un singur fișier; alegerea automată a modelului |
 | `face.js` | face-api (fața + 68 de puncte + vârsta) și ArcFace (amprenta de 512 numere) |
 | `sw.js`, `manifest.webmanifest`, `icon*` | instalare ca aplicație, funcționare fără rețea pentru ecrane |
 | `vendor/` | face-api, ONNX Runtime Web, ArcFace (bucăți de cel mult 5 MB), `pose/` MoveNet Lightning (4,6 MB, din @vladmandic/human-models 3.0.4) |
@@ -54,6 +56,16 @@ MoveNet Lightning rulează în telefon prin TensorFlow.js din face-api (`faceapi
 - **Semnele distinctive** (alunițe, pistrui, tatuaje, ochelari, bijuterii, machiaj) intră în descrierea „ce se vede” și în regula de identitate.
 - **Proporțiile în clip:** rapoarte care nu depind de distanță (umeri/trunchi, șolduri/umeri, braț/antebraț, coapsă/gambă), comparate cu poza de start pe cele 8 cadre; mediana abaterilor → procent (5% → 90, 10% → 80 = pragul, 15% → 70). Aproximativ: unghiul și poziția schimbă măsurătorile; nu măsoară forme de sub haine.
 
+## Noutățile 1.6
+- **Povești lungi:** Claude împarte povestea (20–120 s) în scene de 4–10 s; modelul fiecărei scene e ales automat. Scena k pornește din ultimul cadru al scenei k−1; dacă fața din acel cadru a scăzut sub 64%, cadrul e refăcut cu fața personajului (klein 9B) înainte de scenă. Fiecare scenă are plan, cadru final ancorat și verificări. Scenele rulează ca lucrări obișnuite (se reiau după repornire; o eroare oprește povestea, „Reia”/„Continuă” o pornesc). În galerie: cardul poveștii, redare continuă, „Salvează povestea” (înregistrare în telefon într-un singur fișier MP4/WebM, în timp real), „Oprește”, „Șterge povestea”.
+- **Cel mai bun din 2:** două variante ale aceluiași clip; când sunt gata, se alege după față + corp + pași; cealaltă rămâne „alternativă”. Cost × 2 (arătat pe buton).
+- **Reparatul feței:** P-Video-Replace pe clipul făcut, cu reperul 1 = poza de start a clipului (aceleași haine) și reperul 2 = fața de aproape; mișcarea, camera și sunetul rămân. 0,03 $/s la 720p, 0,06 $/s la 1080p. Opțional automat când fața iese sub 64%.
+- **Mărire și fluidizare:** P-Video-Upscale (`taskType: upscale`): 720p/1080p/2K/4K, 24/30/60 fps, turbo. Prețuri: 720p 0,01/0,02/0,0035 $/s; 1080p 0,02/0,04/0,007; 2K 0,04/0,08/0,014; 4K 0,08/0,16/0,028 (≤30 fps / >30 fps / turbo). Limita de cadre Runware verificată înainte (720p 2.400, 1080p 1.200, 2K 600, 4K 300; cadre = secunde × min(fps, 30)).
+- **Voce și buze:** textul în română → ElevenLabs v3 (`elevenlabs:27@1`, `language: ro`, sămânța personajului; alegerea vocii nu e documentată pe Runware) → sync lipsync-2 (0,044 $/s) pe clip. Clipul nou păstrează replica.
+- **Alegerea automată a modelului:** reguli fără cost — replică ≤ 8 s → Veo 3.1 Fast; replică în rest → Kling 4.0; > 10 s sau ≥ 4 acțiuni → Seedance 2.5; altfel Kling 4.0 (cu cadru final) sau Kling 4.0 Flash. „Folosește” pune modelul și durata potrivită.
+- **Fișa completă:** profil, față de aproape, tot corpul, din profil. Fața se verifică pe profil + față de aproape + profil lateral; pozele de start generate primesc toate reperele și se compară proporțiile cu poza cu tot corpul.
+- Prelucrările pornesc de la codul clipului la Runware (`videoUUID`), păstrat pe clipurile făcute din 1.6; clipurile mai vechi nu se pot prelucra.
+
 ## Cadrul final ancorat (1.5)
 Planul lui Claude are și `endPose` (poziția de la finalul clipului). FLUX.2 klein 9B face ultima imagine din poza de start (reperul 1) și portretul de aproape (reperul 2): aceeași persoană, același corp, haine, loc, lumină și încadrare, altă poziție; aceeași mărime ca poza de start (multiplu de 16, latura lungă ≤ 1.280). Se verifică fața (ArcFace ≥ 64%) și proporțiile față de poza de start (≥ 80%); până la 2 încercări, se păstrează cea mai bună. Cadrul se trimite ca `frameImages[1] = {image, frame:'last'}` la Veo 3.1, Veo 3.1 Fast, Seedance 2.5, Kling 4.0 și P-Video-2 (Kling 4.0 Flash acceptă doar primul cadru). Promptul primește „The clip ends exactly on the provided last frame: …”. Se vede în Creează, cu scorurile și „↻ Refă cadrul final”; se poate opri din Setări. Cost: ~0,4 cenți pe încercare.
 
@@ -81,12 +93,13 @@ Fișierul se citește imediat și se aduce la JPEG (≤ 2.400 px); dacă nu se p
 Taifas și Animas sunt pe aceeași adresă (`costi1622.github.io`), deci în același Chrome văd aceeași memorie a telefonului. Animas **doar citește** baza `taifas2` (personajele, pozele, cheile); dacă Taifas nu există în acel browser, deschiderea e anulată ca să nu creeze o bază goală care l-ar strica. Se copiază: numele, poza de profil, portretul de aproape (`closeRef`), poza întreagă (`photoFull`), descrierea fizică (`physEn`), și al doilea personaj din duo-uri. Reimportul actualizează, nu dublează. Cheile se preiau doar dacă sunt în telefon (nu din seiful Worker).
 
 ## Teste
-`test-animas-100.py` (Playwright, Claude și Runware simulate): 159 de verificări în browser + `test-prompt-120.js` (Node, 43 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
+`test-animas-100.py` (Playwright, Claude și Runware simulate): 198 de verificări în browser + `test-prompt-120.js` (Node, 43 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
 Rulare: `python3 test-animas-100.py <dosarul animas>` (lângă el: `fata.jpg`, `corp.jpg`, `clip.webm`).
 
 ## Istoric
 | Versiune | Data | Ce |
 | --- | --- | --- |
+| 1.6 | 20.11.2026 | povești lungi; cel mai bun din 2; reparatul feței; mărire și fluidizare; voce în română + buze; alegerea automată a modelului; fișa completă a personajului |
 | 1.5 | 20.11.2026 | cadrul final ancorat; măsurarea corpului de încredere (rapoarte doar când poziția le lasă comparabile, media în loc de mediană); „Refă” când fața sau corpul au deviat; vârsta la import și la poze; urcarea pozelor cu mesaje clare; refacerea dintr-o schiță nu mai lasă P-Video-2 ca model final |
 | 1.4 | 20.11.2026 | corpul: MoveNet în telefon (încadrare cap + corp, ce se vede din corp în prompt, proporțiile în clip); semnele distinctive ale feței în prompt; ștergerea clipurilor din galerie (selecție, toate schițele), butoanele sub video |
 | 1.3 | 20.11.2026 | încadrarea pozei de start: capul întreg, restul spre corp, formatul recomandat, mutarea cadrului; repară tăierea ochilor la selfie-uri de aproape în 16:9 |

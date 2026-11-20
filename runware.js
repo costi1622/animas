@@ -78,7 +78,7 @@ async function rwWait(taskUUID, kind, {signal, onTick, onStatus, maxMs = 20 * 60
     if(onStatus) onStatus({st:L.map(x => x.status || (x.videoURL || x.imageURL ? 'gata' : '?')).join(', ') || 'fără răspuns', raw:JSON.stringify(d).slice(0, 600)});
     const bad = L.find(x => x.status === 'error');
     if(bad) throw rwFail(bad.message || bad.error || (kind === 'video' ? 'clipul n-a ieșit' : 'poza n-a ieșit'));
-    const ok = L.find(x => x.videoURL || x.imageURL || x.imageBase64Data);
+    const ok = L.find(x => x.videoURL || x.imageURL || x.imageBase64Data || x.audioURL);
     if(ok) return ok;
     if(kind === 'video' && Date.now() - t0 > 4 * 60e3 && Date.now() - lastDet > 2 * 60e3){
       lastDet = Date.now();

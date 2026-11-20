@@ -65,6 +65,9 @@ ol.steps{margin:6px 0 4px;padding-left:22px;font-size:14px}ol.steps li{margin:3p
 .pick{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:2px solid #fff;background:#0006;display:flex;align-items:center;justify-content:center;font-weight:700}
 .card.picked{outline:3px solid var(--acc)}.card.picked .pick{background:var(--acc);border-color:var(--acc);color:#1a0d08}
 .acts{margin:10px 0 4px}
+.tag.t2{top:auto;bottom:8px;left:auto;right:8px;background:#8fd3ff;color:#06202e}.tag.t3{top:auto;bottom:8px;background:#ddd;color:#222}.tag.t3.ok2{background:var(--ok);color:#06210f}
+.modes{margin:12px 0 0}.modebtn{background:transparent;color:var(--txt);border:1px solid var(--line);flex:1}.modebtn.on{background:var(--acc);color:#1a0d08;border-color:var(--acc)}
+.rec{font-size:13px;margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .tag{position:absolute;top:8px;left:8px;background:var(--warn);color:#201500;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
 .meta{display:flex;flex-direction:column;gap:2px;padding:8px 10px;font-size:13px}
 #cLast .card{display:grid;grid-template-columns:110px 1fr}
@@ -109,6 +112,14 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
         <p class="muted">FLUX.2 klein 9B cu fața și poza personajului ca repere; costul real apare după.</p>
       </div>
     </section>
+    <div class="row modes"><button class="modebtn on" data-m="clip" onclick="setMode('clip')">Un clip</button><button class="modebtn" data-m="poveste" onclick="setMode('poveste')">Poveste lungă</button></div>
+    <section class="box" id="storyPane" hidden><h3>Povestea</h3>
+      <textarea id="stText" rows="5" placeholder="ex.: se trezește, se întinde, se ridică din pat, merge la fereastră, deschide perdeaua, zâmbește spre cameră și spune „Bună dimineața!”"></textarea>
+      <div class="row"><label style="margin:0">Durata totală <select id="stTotal"><option>20</option><option selected>30</option><option>45</option><option>60</option><option>90</option><option>120</option></select> s</label><button id="btnStSplit" onclick="storySplit()">Împarte în scene</button></div>
+      <p class="muted">Pornește din poza de start de mai sus; fiecare scenă continuă din ultimul cadru al celei dinainte. Formatul, sunetul și „cel mai bun din 2” vin din setările clipului.</p>
+      <div id="stPlan"></div>
+    </section>
+    <div id="clipPane">
     <section class="box"><h3>Ce face</h3>
       <textarea id="cText" rows="4" placeholder="ex.: se uită spre cameră, zâmbește, își dă părul după ureche și face un pas spre mine" oninput="onText(this.value)"></textarea>
       <div class="row"><button class="sm ghost" id="btnPrep" onclick="btnPrepare()">Pregătește promptul</button><span class="muted">Claude îl scrie pentru model și se uită la poză.</span></div>
@@ -116,6 +127,7 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
     </section>
     <section class="box"><h3>Clipul</h3>
       <label>Model<select id="oModel" onchange="setOpt('mk', this.value)"></select></label>
+      <div id="oRec" class="rec"></div>
       <div class="grid2">
         <label>Rezoluție<select id="oRes" onchange="setOpt('res', this.value)"></select></label>
         <label>Durată<select id="oSec" onchange="setOpt('sec', this.value)"></select></label>
@@ -123,15 +135,17 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
       <label>Format</label><div class="row" id="oAspect"></div>
       <label class="chk"><input type="checkbox" id="oAudio" onchange="setOpt('audio', this.checked)"> Sunet <span class="muted" id="oAudioNote"></span></label>
       <div id="oCost"></div>
+      <label class="chk"><input type="checkbox" id="oBest2" onchange="setFlag('best2', this.checked); renderCostLine(); renderStoryPlan()"> Cel mai bun din 2 (două variante, aleg singur după față, corp și pași; cost × 2)</label>
       <div class="row wrap"><button class="ghost" id="btnDraft" onclick="send(false)">Schiță</button><button id="btnFinal" onclick="send(true)">Clip final</button></div>
       <p class="muted">Schița (P-Video-2, 720p) arată mișcarea ieftin; finalul folosește modelul ales.</p>
     </section>
+    </div>
     <div id="cJobs"></div>
     <div id="cLast"></div>
   </div>
 
   <div class="view" id="v-galerie" hidden>
-    <h2>Galerie</h2><p class="muted" id="gSum"></p><div class="row wrap" id="gBar"></div>
+    <h2>Galerie</h2><p class="muted" id="gSum"></p><div class="row wrap" id="gBar"></div><div id="gStories"></div>
     <div class="cards" id="gList"></div>
   </div>
 
@@ -153,6 +167,8 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
     <section class="box"><h3>Comportament</h3>
       <label class="chk"><input type="checkbox" id="sUseCl" onchange="setFlag('useClaude', this.checked)"> Claude rescrie promptul (altfel textul tău merge direct la model)</label>
       <label class="chk"><input type="checkbox" id="sFace" onchange="setFlag('checkFace', this.checked)"> Verifică fața (ArcFace, în telefon, gratuit)</label>
+ <label class="chk"><input type="checkbox" id="sBest2" onchange="setFlag('best2', this.checked)"> Cel mai bun din 2 (două variante la fiecare clip, se păstrează cea mai bună; cost × 2)</label>
+      <label class="chk"><input type="checkbox" id="sFix" onchange="setFlag('autoFix', this.checked)"> Repară fața automat când iese sub 64% (P-Video-Replace, 0,03 $/s la 720p)</label>
       <label class="chk"><input type="checkbox" id="sEnd" onchange="setFlag('endFrame', this.checked)"> Ancorează cadrul final (FLUX.2 klein 9B face ultima imagine cu același corp; ~0,4–1 cent pe clip; Kling 4.0, Veo 3.1, Seedance 2.5, schița)</label>
       <label class="chk"><input type="checkbox" id="sSteps" onchange="setFlag('checkSteps', this.checked)"> Verifică pașii în clip (Claude vede 8 cadre, ~1–2 cenți pe clip)</label>
     </section>
@@ -172,6 +188,8 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
 <script src="claude.js"></script>
 <script src="face.js"></script>
 <script src="body.js"></script>
+<script src="post.js"></script>
+<script src="story.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -89,7 +89,7 @@ const idPct = d => Math.round(100 * Math.max(0, Math.min(1, (.9 - d) / .55)));
 const ID_OK = 64;
 // amprentele de referință ale personajului (portretul de aproape + poza de profil), ținute pe personaj
 async function refEmbs(c){
-  const keys = [c.face, c.photo].filter(Boolean), k = keys.join('|');
+  const keys = [c.face, c.photo, c.side].filter(Boolean), k = keys.join('|');   // 1.6: și profilul din fișă
   if(c.emb && c.emb.k === k && c.emb.d.length) return c.emb.d;
   const d = [];
   for(const key of keys){ const b = await DB.get(key).catch(() => null); if(!b) continue; const f = await faceOf(b).catch(() => null); if(f) d.push(f.emb); }
