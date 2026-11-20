@@ -1,6 +1,6 @@
 # Animas — documentație
 
-Versiunea **1.6** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
+Versiunea **1.7** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
 Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · publicare: arhiva ZIP urcată în rădăcina repo-ului, workflow-ul `publica.yml` o dezarhivează și o publică pe GitHub Pages.
 
 ## Principii
@@ -20,6 +20,7 @@ Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · public
 | `prompt.js` | 1.2: asamblarea promptului video pe strategia fiecărui model, limita de 2.000 de caractere, compactarea fără pierderi de pași |
 | `body.js` | 1.4: corpul cu MoveNet Lightning (17 puncte), încadrarea, ce se vede din corp, proporțiile în clip |
 | `post.js` | 1.6: reparatul feței (P-Video-Replace), mărirea și fluidizarea (P-Video-Upscale), vocea (ElevenLabs v3, română) + buzele (sync lipsync-2) |
+| `callset.js` | 1.7: setul pentru apel (imaginea de apel + clipuri pe roluri, verificate pentru apel), citit de Taifas 14.7 |
 | `story.js` | 1.6: povești lungi din mai multe scene, redarea continuă, salvarea într-un singur fișier; alegerea automată a modelului |
 | `face.js` | face-api (fața + 68 de puncte + vârsta) și ArcFace (amprenta de 512 numere) |
 | `sw.js`, `manifest.webmanifest`, `icon*` | instalare ca aplicație, funcționare fără rețea pentru ecrane |
@@ -55,6 +56,15 @@ MoveNet Lightning rulează în telefon prin TensorFlow.js din face-api (`faceapi
 - **Ce se vede** în cadrul final (tot corpul / cap–genunchi / cap–șolduri / cap și umeri) apare sub poză și merge la Claude și în prompt: „Framing: …; păstrează încadrarea, nu inventa părți ale corpului din afara cadrului”.
 - **Semnele distinctive** (alunițe, pistrui, tatuaje, ochelari, bijuterii, machiaj) intră în descrierea „ce se vede” și în regula de identitate.
 - **Proporțiile în clip:** rapoarte care nu depind de distanță (umeri/trunchi, șolduri/umeri, braț/antebraț, coapsă/gambă), comparate cu poza de start pe cele 8 cadre; mediana abaterilor → procent (5% → 90, 10% → 80 = pragul, 15% → 70). Aproximativ: unghiul și poziția schimbă măsurătorile; nu măsoară forme de sub haine.
+
+## Noutățile 1.7 — 📞 setul pentru apel (Taifas)
+- Fila **📞 Apel** (lângă „Un clip” și „Poveste lungă”): personajul și poza de start de sus; formatul trece pe 9:16.
+- **Imaginea de apel**: cadrul din care pornesc toate clipurile și în care se întorc. „📸 Selfie de apel” scrie scena (selfie, haine de zi cu zi, locul ales) pentru „Generează poza”; „Poza de start → imagine de apel”; „Din clipurile mele” → poza de start a unui clip făcut deja.
+- **8 roluri** (ca în Taifas): Vorbește, Ascultă, Ce face, Vorbește (2), Se gândește, Râde, Privește într-o parte, La revedere. „Fă” / „Fă ce lipsește”: prompturi fixe, neutre; primul și ultimul cadru = imaginea de apel (bucla se închide), „La revedere” doar primul. Modele: Kling 4.0 (0,157 $/s), P-Video-2 (0,025 $/s), Veo 3.1 Fast (0,10 $/s fără sunet); 720p. Setul întreg: 8 × 5 s = 6,28 $ (Kling) / 1,00 $ (P-Video-2); Veo: 8 × 4 s = 3,20 $; o singură dată.
+- „Alege”: un clip al tău pentru un rol. Se măsoară săritura față de imaginea de apel (peste 12% → „pornește altfel decât imaginea”).
+- **Verificarea pentru apel** (fiecare clip din set, făcut sau ales): Claude pe 4 cadre — adult, haine de zi cu zi, mișcare obișnuită de apel. Doar clipurile trecute ajung în Taifas; cele respinse arată motivul.
+- **Locul**: toate locurile sau unul anume (acasă, pat, bucătărie, stradă, parc, cafenea, mașină, birou, plajă) — un set pe loc.
+- **Contractul cu Taifas** (`callsets` în baza `animas`): `{v:1, id, charId, tid (id-ul din Taifas = c.srcId), place, frame, clips:{rol:idClip}, chk:{idClip:{ok, why, jump}}, mk, sec, upd}`; `upd` se schimbă la orice modificare. Clipul șters din galerie iese din set.
 
 ## Noutățile 1.6
 - **Povești lungi:** Claude împarte povestea (20–120 s) în scene de 4–10 s; modelul fiecărei scene e ales automat. Scena k pornește din ultimul cadru al scenei k−1; dacă fața din acel cadru a scăzut sub 64%, cadrul e refăcut cu fața personajului (klein 9B) înainte de scenă. Fiecare scenă are plan, cadru final ancorat și verificări. Scenele rulează ca lucrări obișnuite (se reiau după repornire; o eroare oprește povestea, „Reia”/„Continuă” o pornesc). În galerie: cardul poveștii, redare continuă, „Salvează povestea” (înregistrare în telefon într-un singur fișier MP4/WebM, în timp real), „Oprește”, „Șterge povestea”.
@@ -93,12 +103,13 @@ Fișierul se citește imediat și se aduce la JPEG (≤ 2.400 px); dacă nu se p
 Taifas și Animas sunt pe aceeași adresă (`costi1622.github.io`), deci în același Chrome văd aceeași memorie a telefonului. Animas **doar citește** baza `taifas2` (personajele, pozele, cheile); dacă Taifas nu există în acel browser, deschiderea e anulată ca să nu creeze o bază goală care l-ar strica. Se copiază: numele, poza de profil, portretul de aproape (`closeRef`), poza întreagă (`photoFull`), descrierea fizică (`physEn`), și al doilea personaj din duo-uri. Reimportul actualizează, nu dublează. Cheile se preiau doar dacă sunt în telefon (nu din seiful Worker).
 
 ## Teste
-`test-animas-100.py` (Playwright, Claude și Runware simulate): 198 de verificări în browser + `test-prompt-120.js` (Node, 43 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
+`test-animas-100.py` (Playwright, Claude și Runware simulate): 213 verificări în browser + `test-prompt-120.js` (Node, 43 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
 Rulare: `python3 test-animas-100.py <dosarul animas>` (lângă el: `fata.jpg`, `corp.jpg`, `clip.webm`).
 
 ## Istoric
 | Versiune | Data | Ce |
 | --- | --- | --- |
+| 1.7 | 20.11.2026 | 📞 setul pentru apel: imaginea de apel, 8 roluri, verificarea pentru apel, preluat de Taifas 14.7 |
 | 1.6 | 20.11.2026 | povești lungi; cel mai bun din 2; reparatul feței; mărire și fluidizare; voce în română + buze; alegerea automată a modelului; fișa completă a personajului |
 | 1.5 | 20.11.2026 | cadrul final ancorat; măsurarea corpului de încredere (rapoarte doar când poziția le lasă comparabile, media în loc de mediană); „Refă” când fața sau corpul au deviat; vârsta la import și la poze; urcarea pozelor cu mesaje clare; refacerea dintr-o schiță nu mai lasă P-Video-2 ca model final |
 | 1.4 | 20.11.2026 | corpul: MoveNet în telefon (încadrare cap + corp, ce se vede din corp în prompt, proporțiile în clip); semnele distinctive ale feței în prompt; ștergerea clipurilor din galerie (selecție, toate schițele), butoanele sub video |

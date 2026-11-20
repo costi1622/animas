@@ -42,7 +42,10 @@ const storyById = id => stories.find(s => s.id === id);
 const ST = {plan:null};   // scenele propuse, înainte de pornire
 const STORY_RUN = {};
 
-function setMode(m){ S.mode = m; saveS(); $$('.modebtn').forEach(b => b.classList.toggle('on', b.dataset.m === m)); $('#clipPane').hidden = m === 'poveste'; $('#storyPane').hidden = m !== 'poveste'; if(m === 'poveste') renderStoryPlan(); }
+function setMode(m){ if(!['clip', 'poveste', 'apel'].includes(m)) m = 'clip'; S.mode = m; saveS(); $$('.modebtn').forEach(b => b.classList.toggle('on', b.dataset.m === m)); $('#clipPane').hidden = m !== 'clip'; $('#storyPane').hidden = m !== 'poveste'; $('#callPane').hidden = m !== 'apel';
+  if(m === 'poveste') renderStoryPlan();
+  if(m === 'apel'){ if(S.aspect !== '9:16'){ S.aspect = '9:16'; renderOpts(); applyAspect(); } renderCallSet(); }   // 1.7: setul pentru apel e vertical
+  csTick(m === 'apel'); }
 async function storySplit(){
   if(!C.start) return toast('Alege întâi poza de start (de aici pornește prima scenă).');
   const text = $('#stText').value.trim(); if(!text) return toast('Scrie povestea.');

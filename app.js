@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.6';
+const APP_VER = '1.7';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -114,7 +114,7 @@ async function checkAges(){
 async function boot(){
   await DB.open();
   S = {...DEF, ...((await DB.get('settings')) || {})};
-  chars = (await DB.get('chars')) || []; clips = (await DB.get('clips')) || []; jobs = (await DB.get('jobs')) || []; stories = (await DB.get('stories')) || [];
+  chars = (await DB.get('chars')) || []; clips = (await DB.get('clips')) || []; jobs = (await DB.get('jobs')) || []; stories = (await DB.get('stories')) || []; callsets = (await DB.get('callsets')) || [];
   try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
   $('#ver').textContent = APP_VER;
   if(!chars.length || !S.rwKey) setTimeout(() => { if(!S.rwKey) toast('Pune cheile în Setări sau preia-le din Taifas.', 5000); }, 800);
@@ -124,7 +124,7 @@ async function boot(){
   for(const j of jobs) runJob(j, true);
   setTimeout(() => checkAges().catch(() => {}), 1500);
   for(const st of stories) if(st.state === 'lucru') setTimeout(() => storyNext(st.id), 2000);   // 1.6: poveștile în lucru continuă
-  setMode(S.mode === 'poveste' ? 'poveste' : 'clip');
+  setMode(S.mode || 'clip');
   if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 function go(v){
@@ -145,7 +145,7 @@ function renderCreate(){
     + `<button class="chip ${!C.charId ? 'on' : ''}" onclick="pickChar('')"><span class="ph">∅</span><span>Fără personaj</span></button>`
     + `<button class="chip add" onclick="go('personaje')"><span class="ph">+</span><span>Adaugă</span></button>`;
   hydrate(ch);
-  renderStart(); renderOpts(); renderPrompt(); renderJobs(); renderLast();
+  renderStart(); renderOpts(); renderPrompt(); renderJobs(); renderLast(); renderCallSet();
 }
 function pickChar(id){ if(id && isYoung(charById(id))) return toast(`Personajul pare sub ${AGE_MIN} de ani: nu se folosește pentru clipuri.`, 5000); C.charId = id || null; C.start = null; C.startRaw = null; C.crop = null; C.startSrc = ''; C.score = null; renderCreate(); }
 function renderStart(){
@@ -376,6 +376,9 @@ async function send(final){
 
 /* ───────── lucrări (persistente: se reiau la pornire) ───────── */
 const jobTick = {};
+// 1.7: o singură verificare grea în telefon odată (coadă)
+let VQ = Promise.resolve();
+function vAcquire(){ let r; const p = new Promise(x => r = x), prev = VQ; VQ = prev.then(() => p); return prev.then(() => r); }
 async function runJob(job, resume, got){
   try{
     if(!job.taskUUID){
@@ -402,18 +405,18 @@ async function runJob(job, resume, got){
     const cost = +x.cost > 0 ? +x.cost : job.est; addCost('runware', cost);
     const vid = await putBlob('vid', vb), rw = {uuid:x.videoUUID || null, url:x.videoURL || null};   // 1.6: codul clipului la Runware, pentru prelucrări
     if(job.kind && job.kind !== 'video') return finishPost(job, x, vb, vid, rw, cost);
+    let frames = [], score = null, th = null, body = null, check = null;
+    const rel = await vAcquire(); try{   // 1.7: verificările din telefon (cadre, față, corp) pe rând: mai multe clipuri gata deodată nu mai umplu memoria
     job.state = 'verific'; updJob(job);
-    let frames = [], score = null, th = null;
     try{ frames = await videoFrames(vb, 8); }catch(e){}
     if(frames.length) th = await putBlob('th', await toJpeg(frames[Math.min(1, frames.length - 1)], 480, .8));
     const c = charById(job.charId);
     if(c && S.checkFace === 'on' && frames.length){ try{ score = await clipScore(c, frames); }catch(e){} }
     // 1.4: proporțiile corpului în clip față de poza de start (umeri, trunchi, șolduri, brațe, picioare)
-    let body = null;
     if(S.checkFace === 'on' && frames.length){ job.state = 'corp'; updJob(job); try{ body = await bodyScore(await DB.get(job.start), frames); }catch(e){} }
     // 1.1: au apărut pașii ceruți? (Claude vede 8 cadre)
-    let check = null;
     if(S.checkSteps !== 'off' && S.clKey && job.steps && job.steps.length && frames.length >= 4){ job.state = 'pasi'; updJob(job); try{ check = await clCheckSteps(job.steps, frames); }catch(e){ check = {err:String(e.message || e).slice(0, 160)}; } }
+    } finally { rel(); }
     const clip = {id:uid(), at:Date.now(), charId:job.charId, text:job.text, prompt:job.prompt, nota:job.nota, start:job.start, startScore:job.startScore,
       mk:job.mk, res:job.res, sec:job.sec, audio:job.audio, draft:job.draft, aspect:job.aspect, cost, costReal:+x.cost > 0, vid, th, score, body, steps:job.steps || [], check, end:job.end || null, endScore:job.endScore || null, endPose:job.endPose || '',
       rw, group:job.group || null, storyId:job.storyId || null, seg:job.seg ?? null};
@@ -421,7 +424,8 @@ async function runJob(job, resume, got){
     jobs = jobs.filter(j => j.id !== job.id); await saveJobs();
     if(job.group) await groupDone(job.group);
     if(job.storyId) storyNext(job.storyId);
-    if(S.autoFix === 'on' && score && score.avg != null && score.avg < ID_OK && rw.uuid && !job.group) postJob('replace', clip, {res:job.res === '1080p' ? '1080p' : '720p', quiet:true});
+    if(job.callSet) csGot(job, clip).catch(() => {});   // 1.7: clipul pentru setul de apel
+    if(S.autoFix === 'on' && score && score.avg != null && score.avg < ID_OK && rw.uuid && !job.group && !job.callSet) postJob('replace', clip, {res:job.res === '1080p' ? '1080p' : '720p', quiet:true});
     toast(`${job.draft ? 'Schița' : 'Clipul'} e gata · ${usdC(cost)}${score && score.avg != null ? ' · fața ' + score.avg + '%' : ''}${check && check.n ? ` · pași ${check.ok}/${check.n}` : ''}`, 5000);
     if(!$('#v-creeaza').hidden){ renderJobs(); renderLast(); } else if(!$('#v-galerie').hidden) renderGallery();
   }catch(e){

@@ -35,6 +35,9 @@ label{display:block;color:var(--mut);font-size:13px;margin:10px 0 4px}
 label>input,label>select,label>textarea{margin-top:4px}
 label.chk{display:flex;gap:8px;align-items:flex-start;color:var(--txt);font-size:14px}
 label.chk input{width:auto;margin-top:3px}
+.csframe{display:flex;gap:10px;margin:10px 0}.csframe img,.csframe .empty{width:96px;height:170px;object-fit:cover;border-radius:10px;flex:none}.csframe .empty{display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;border:1px dashed var(--line)}
+.csrole{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:14px}.csrole img,.csrole .ph{width:40px;height:70px;object-fit:cover;border-radius:6px;flex:none;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.05)}.csrole>div:nth-child(2){flex:1;min-width:0}.csbtn{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-width:45%}
+.cspick .csrow{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)}.cspick img{width:56px;height:100px;object-fit:cover;border-radius:8px;flex:none}
 .muted{color:var(--mut);font-size:13px}.ok{color:var(--ok)}.warn{color:var(--warn)}.errtxt{color:var(--bad);font-size:13px;margin-top:4px}.bad{color:var(--bad)}
 ol.steps{margin:6px 0 4px;padding-left:22px;font-size:14px}ol.steps li{margin:3px 0}.sec{color:var(--acc2);font-variant-numeric:tabular-nums;font-size:13px}
 #pSteps .warn{font-size:13px;margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -112,7 +115,8 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
         <p class="muted">FLUX.2 klein 9B cu fața și poza personajului ca repere; costul real apare după.</p>
       </div>
     </section>
-    <div class="row modes"><button class="modebtn on" data-m="clip" onclick="setMode('clip')">Un clip</button><button class="modebtn" data-m="poveste" onclick="setMode('poveste')">Poveste lungă</button></div>
+    <div class="row modes"><button class="modebtn on" data-m="clip" onclick="setMode('clip')">Un clip</button><button class="modebtn" data-m="poveste" onclick="setMode('poveste')">Poveste lungă</button><button class="modebtn" data-m="apel" onclick="setMode('apel')">📞 Apel</button></div>
+    <div id="callPane" hidden></div>
     <section class="box" id="storyPane" hidden><h3>Povestea</h3>
       <textarea id="stText" rows="5" placeholder="ex.: se trezește, se întinde, se ridică din pat, merge la fereastră, deschide perdeaua, zâmbește spre cameră și spune „Bună dimineața!”"></textarea>
       <div class="row"><label style="margin:0">Durata totală <select id="stTotal"><option>20</option><option selected>30</option><option>45</option><option>60</option><option>90</option><option>120</option></select> s</label><button id="btnStSplit" onclick="storySplit()">Împarte în scene</button></div>
@@ -190,6 +194,7 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
 <script src="body.js"></script>
 <script src="post.js"></script>
 <script src="story.js"></script>
+<script src="callset.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
