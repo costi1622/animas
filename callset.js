@@ -43,20 +43,22 @@ function csParams(s){
   const res = '720p', audio = m.audio === 'always';
   return {mk, sec, res, audio, usd:costClip(mk, res, sec, audio, false).usd};
 }
-// verificarea de apel: 4 cadre la Claude (adult, haine de zi cu zi, mișcare obișnuită) + săritura față de imaginea de apel (în telefon)
+// verificarea de apel: 4 cadre la Claude (adult, mișcare obișnuită, detectare bikini și descriere ținută) + săritura față de imaginea de apel (în telefon)
 async function csCheck(clip, frame, charId){
   const vb = await DB.get(clip.vid); if(!vb) throw new Error('Clipul lipsește din telefon.');
   const fr = await videoFrames(vb, 4); if(!fr.length) throw new Error('Nu pot citi cadrele clipului.');
   let jump = null; try{ const f = frame ? await DB.get(frame) : null; if(f) jump = await csDiff(fr[0], f); }catch(e){}
   let face = null; try{ const c = charById(charId || C.charId); const sc = c && S.checkFace === 'on' ? await clipScore(c, fr) : null; face = sc && sc.avg != null ? sc.avg : null; }catch(e){}   // 1.7.1: e chiar ea? (clipul poate veni de la alt personaj sau fără personaj)
   if(!S.clKey) throw new Error('Verificarea pentru apel are nevoie de Claude (cheia Anthropic, în Setări).');
-  const sys = 'You check short video clips that will be used as the animation of an ordinary, casual phone video call. Judge only what is visible in the frames. Answer ONLY with JSON.';
+  const sys = 'You check short video clips that will be used as the animation of a phone video call. Judge only what is visible in the frames. Answer ONLY with JSON.';
   const content = [];
   for(const f of fr) content.push(await imgBlock(f, 512));
-  content.push({type:'text', text:'For ALL frames: "adult" = the person clearly looks like an adult; "dressed" = fully dressed in everyday clothes (casual outfit, home clothes, jacket…; not underwear, not swimwear outside a beach, nothing revealing); "everyday" = an ordinary, non-suggestive motion that fits a casual video call (talking, listening, nodding, smiling, laughing, thinking, waving, glancing away, small everyday activity). "selfie" = framed like a phone video call (face visible, roughly facing the camera). JSON: {"adult":true,"dressed":true,"everyday":true,"selfie":true,"why":"one short reason in Romanian when something is false"}'});
-  const {text} = await claudeCall(sys, content, {max:200});
-  const j = jsonOut(text), ok = j.adult === true && j.dressed === true && j.everyday === true;
-  return {ok, selfie:j.selfie !== false, why:ok ? '' : String(j.why || 'nu e potrivit pentru apel').slice(0, 140), jump, face, at:Date.now()};
+  content.push({type:'text', text:'For ALL frames: "adult" = the person clearly looks like an adult; "everyday" = a natural motion that fits a video call (talking, listening, nodding, smiling, laughing, thinking, waving, glancing away, small natural activity); "selfie" = framed like a phone video call (face visible, roughly facing the camera); "in_bikini" = true if the person is wearing a bikini or two-piece swimsuit in any frame, otherwise false; "outfit_desc" = short description in Romanian of what the person is wearing (e.g. "bikini negru", "tricou alb și blugi", "rochie de vară"). JSON: {"adult":true,"everyday":true,"selfie":true,"in_bikini":false,"outfit_desc":"...","why":"one short reason in Romanian when adult or everyday is false"}'});
+  const {text} = await claudeCall(sys, content, {max:260});
+  const j = jsonOut(text), ok = j.adult === true && j.everyday === true;
+  const in_bikini = j.in_bikini === true;
+  const outfit_desc = String(j.outfit_desc || '').trim().slice(0, 120);
+  return {ok, selfie:j.selfie !== false, in_bikini, outfit_desc, why:ok ? '' : String(j.why || 'nu e potrivit pentru apel').slice(0, 140), jump, face, at:Date.now()};
 }
 // diferența medie (0–100) între două imagini, micșorate la 36×64, alb-negru
 async function csDiff(a, b){
@@ -115,7 +117,7 @@ async function csFrame(fromKey){
 function csSelfie(){
   if(!C.charId) return toast('Alege personajul.');
   $('#genBox').hidden = false;
-  $('#genText').value = `selfie în timpul unui apel video, telefonul ținut cu mâna întinsă, capul și umerii în cadru, fața mare, clară și bine luminată, se uită direct în cameră, ${CS_SCENE[CS.place] || 'acasă'}, haine obișnuite de zi cu zi, lumină naturală, ca o poză reală cu camera frontală a telefonului`;
+  $('#genText').value = `selfie în timpul unui apel video, telefonul ținut cu mâna întinsă, capul și umerii în cadru, fața mare, clară și bine luminată, se uită direct în cameră, ${CS_SCENE[CS.place] || 'acasă'}, lumină naturală, ca o poză reală cu camera frontală a telefonului`;
   $('#genText').scrollIntoView({block:'center'});
   toast('Am scris scena pentru selfie; o poți schimba, apoi „Generează poza”.', 3500);
 }
@@ -128,7 +130,7 @@ function csPick(role){
   const card = x => `<div class="csrow" id="csr-${x.id}"><img data-k="${x.th || x.start}" alt="" onclick="csPrev('${x.id}')"><div><b>${esc(String(x.text || '').slice(0, 70) || 'clip')}</b><br><span class="muted">${x.sec || '?'} s · ${new Date(x.at).toLocaleDateString('ro-RO')}${x.storyId ? ' · scenă din poveste' : ''}${who(x)}</span>
     <div class="row wrap">${role ? `<button class="sm" onclick="csPickGo('${role}','${x.id}')">Pune aici</button>` : ''}${x.start ? `<button class="sm ghost" onclick="csFrame('${x.start}')">Poza lui de start → imagine de apel</button>` : ''}</div></div></div>`;
   sheet(`<h2>${role ? 'Alege clipul pentru „' + esc(csRoleName(role)) + '”' : 'Din clipurile mele'}</h2>
-    <p class="muted">${role ? 'Atinge o miniatură ca să vezi clipul. La „Pune aici” clipul se verifică pentru apel (Claude, 4 cadre: adult, haine de zi cu zi, mișcare obișnuită) și se măsoară fața față de ' + esc(c.name) + '.' : 'Poza de start a unui clip poate deveni imaginea de apel: clipul acela intră apoi fără săritură.'}</p>
+    <p class="muted">${role ? 'Atinge o miniatură ca să vezi clipul. La „Pune aici” clipul se verifică pentru apel (Claude, 4 cadre: adult, mișcare obișnuită, detectare ținută/bikini) și se măsoară fața față de ' + esc(c.name) + '.' : 'Poza de start a unui clip poate deveni imaginea de apel: clipul acela intră apoi fără săritură.'}</p>
     <div id="csPrevBox"></div>
     ${all.length ? `<div class="cspick">${mine.length ? `<h3>Cu ${esc(c.name)} (${mine.length})</h3>` + mine.map(card).join('') : ''}${rest.length ? `<h3>${mine.length ? 'Alte clipuri' : 'Toate clipurile'} (${rest.length})</h3>` + rest.map(card).join('') : ''}</div>` : '<p>Galeria e goală: nu ai încă niciun clip.</p>'}`);
   hydrate($('#sheet'));
@@ -175,6 +177,8 @@ function renderCallSet(){
     let st = '<span class="muted">gol</span>';
     if(jb) st = jb.state === 'eroare' ? `<span class="bad">eroare: ${esc(String(jb.err || '').slice(0, 80))}</span>` : '<span class="muted">se face…</span>';
     else if(x && k){ st = k.wait ? '<span class="muted">se verifică…</span>' : k.ok ? '<span class="ok">✓ merge pentru apel</span>' : `<span class="bad">✗ ${esc(k.why || '')}</span>`;
+      if(!k.wait && k.in_bikini) st += ` <span class="ok">· 👙 bikini${k.outfit_desc ? ' (' + esc(k.outfit_desc) + ')' : ''}</span>`;
+      else if(!k.wait && k.outfit_desc) st += ` <span class="muted">· 👗 ${esc(k.outfit_desc)}</span>`;
       if(k.jump != null && k.jump > CS_JUMP && !k.wait) st += ' <span class="warn">· pornește altfel decât imaginea</span>';
       const fp = k.face != null ? k.face : x.score && x.score.avg != null ? x.score.avg : null;
       if(fp != null && !k.wait) st += fp < ID_OK ? ` <span class="warn">· fața ${fp}%: pare altă persoană</span>` : ` <span class="muted">· fața ${fp}%</span>`; }
@@ -186,7 +190,7 @@ function renderCallSet(){
     ${c.srcId ? `<p class="muted">Taifas îl preia singur când îl deschizi și îl folosește în apelurile video cu ${esc(c.name)}, fără cost în apel (Taifas → Setări → Apeluri → 📚).</p>` : '<p class="warn">Personajul nu e din Taifas: setul se poate face, dar Taifas nu-l vede. Importă personajul din Taifas (Personaje → Importă din Taifas) și fă setul pe cel importat.</p>'}
     <label>Locul<select onchange="csSet('place', this.value)">${CS_PLACES.map(([k, n]) => `<option value="${k}" ${k === CS.place ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
     <div class="csframe">${s && s.frame ? `<img data-k="${s.frame}" alt="">` : '<div class="empty">Fără imagine de apel</div>'}<div>
-      <p class="muted">Imaginea de apel e cadrul din care pornesc toate clipurile (și în care se întorc), ca în apel să nu se vadă tăieturi. Cel mai bine: un selfie de apel, cu haine de zi cu zi.</p>
+      <p class="muted">Imaginea de apel e cadrul din care pornesc toate clipurile (și în care se întorc), ca în apel să nu se vadă tăieturi. Cel mai bine: un selfie de apel clar, cu fața bine luminată.</p>
       <div class="row wrap"><button class="sm ghost" onclick="csSelfie()">📸 Selfie de apel</button><button class="sm" onclick="csFrame()">Poza de start → imagine de apel</button><button class="sm ghost" onclick="csPick('')">Din clipurile mele</button></div></div></div>
     <div class="grid2"><label>Model<select onchange="csSet('mk', this.value)">${CS_MODELS.map(k => `<option value="${k}" ${k === p.mk ? 'selected' : ''}>${MODELE[k].nume} · ${usdC(costClip(k, '720p', 1, MODELE[k].audio === 'always', false).usd)}/s</option>`).join('')}</select></label>
     <label>Durată<select onchange="csSet('sec', this.value)">${MODELE[p.mk].dur.filter(x => x >= 3 && x <= 10).map(x => `<option value="${x}" ${x === p.sec ? 'selected' : ''}>${x} s</option>`).join('')}</select></label></div>

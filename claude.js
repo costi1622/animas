@@ -46,7 +46,7 @@ THE STEPS
 
 THE BODY
 - "visible": in at most 45 words, what the first frame actually shows about the person: build (e.g. slim, athletic, curvy), height impression, shoulder width, hair length, color and style, distinctive features (moles, freckles, tattoos, glasses, jewelry, makeup), the clothes and how they fit, pose. Describe only what is visible; never guess what clothes hide.
-- Nothing in the plan may change the body: no reshaping, no growing or shrinking any part. Clothes stay on the person; only an outer layer (jacket, coat, scarf, hat, gloves) may be taken off or put on. If the user asks to undress beyond an outer layer, leave that part out and say so in "nota".
+- Nothing in the plan may change the body: no reshaping, no growing or shrinking any part. Follow the user's clothing or swimwear/bikini details and changes when requested for an adult character, within the video provider's rules.
 
 THE REST
 - "scene": one short sentence: who and where (e.g. "A young woman in a sunny kitchen").
@@ -85,14 +85,14 @@ async function clVideoPrompt({text, start, mk, sec, audio, persona, missing, fra
 }
 /* 1.1: verificarea pașilor în clip: Claude vede 8 cadre (cu secunda fiecăruia) și spune pentru fiecare pas da / parțial / nu / nesigur */
 async function clCheckSteps(steps, frames, signal){
-  const sys = `You check whether a generated video followed a timed step plan. You get frames from the video, each labelled with its time in seconds. For each step, judge ONLY from what is visible in the frames: "da" (clearly done), "partial" (started or done weakly/wrongly: wrong hand, wrong direction, not completed), "nu" (not visible at all), "nesigur" (the frames are too sparse to see a fast action). Be strict about details the step states (hand, side, count, direction). Answer ONLY with JSON: {"steps":[{"i":1,"v":"da|partial|nu|nesigur","ro":"very short reason in Romanian"}]}`;
+  const sys = `You check whether a generated video followed a timed step plan and inspect the visible outfit. You get frames from the video, each labelled with its time in seconds. For each step, judge ONLY from what is visible in the frames: "da" (clearly done), "partial" (started or done weakly/wrongly: wrong hand, wrong direction, not completed), "nu" (not visible at all), "nesigur" (the frames are too sparse to see a fast action). Also set "in_bikini" to true if the person wears a bikini/two-piece swimsuit in the frames (false otherwise) and describe the outfit briefly in Romanian in "outfit_desc". Answer ONLY with JSON: {"in_bikini":false,"outfit_desc":"...","steps":[{"i":1,"v":"da|partial|nu|nesigur","ro":"very short reason in Romanian"}]}`;
   const content = [];
   for(const f of frames){ content.push({type:'text', text:`Frame at ${(+f.t || 0).toFixed(1)} s:`}); content.push(await imgBlock(f, 640)); }
   content.push({type:'text', text:'Steps:\n' + steps.map((s, i) => `${i + 1}. [${s.t0}–${s.t1} s] ${s.en || s.ro}`).join('\n')});
   const {text:t, usd} = await claudeCall(sys, content, {signal, max:900});
   const j = jsonOut(t), V = ['da', 'partial', 'nu', 'nesigur'];
   const out = steps.map((s, i) => { const x = (j.steps || []).find(y => +y.i === i + 1) || {}; return {v:V.includes(x.v) ? x.v : 'nesigur', ro:String(x.ro || '').slice(0, 160)}; });
-  return {steps:out, ok:out.filter(x => x.v === 'da').length, n:out.length, usd};
+  return {steps:out, ok:out.filter(x => x.v === 'da').length, n:out.length, in_bikini:j.in_bikini === true, outfit_desc:String(j.outfit_desc || '').trim().slice(0, 120), usd};
 }
 // promptul pentru poza de start (FLUX.2 klein 9B), cu reperele personajului
 async function clImagePrompt({text, persona, aspect, hasFace}, signal){
@@ -119,7 +119,7 @@ Rules:
 - Total length about ${total} seconds. Each scene 4–10 seconds (use 8–10 for scenes with several actions, 4–6 for a single short action).
 - Each scene: at most 3–4 visible actions, in order, described in Romanian as the user would write them ("se ridică de pe canapea, merge spre fereastră și se uită afară").
 - Keep continuity: a scene must begin from the pose the previous one ended in. Mention spoken words in quotes only if the story has dialogue.
-- Clothes stay on; only outer layers (jacket, coat, scarf, hat, gloves) may be put on or taken off. Leave out anything else and say so in "nota".
+- Keep clothing consistent with the story; follow requested outfit or swimwear/bikini changes for adult characters within provider rules.
 - Only adults. If the story involves a minor or someone who looks like a child, return no scenes and explain in "nota".
 Answer ONLY with JSON: {"title":"short Romanian title","scenes":[{"ro":"…","sec":8}],"nota":"one short line in Romanian"}`;
   const content = [...(start ? [await imgBlock(start)] : []), {type:'text', text:(persona ? 'Person (description): ' + persona + '\n' : '') + 'Story (Romanian): ' + text}];
