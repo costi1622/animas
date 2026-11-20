@@ -1,6 +1,6 @@
 # Animas — documentație
 
-Versiunea **1.2** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
+Versiunea **1.2.1** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
 Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · publicare: arhiva ZIP urcată în rădăcina repo-ului, workflow-ul `publica.yml` o dezarhivează și o publică pe GitHub Pages.
 
 ## Principii
@@ -30,7 +30,7 @@ Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · public
 | `veo31` | `google:3@2` | 720p/1080p 0,20 / 0,40; 4K 0,40 / 0,60 | 4, 6, 7, 8 s | la alegere |
 | `veo31f` | `google:3@3` | 720p/1080p 0,10 / 0,15; 4K 0,30 / 0,35 | 4, 6, 7, 8 s | la alegere |
 | `seed25` | `bytedance:seedance@2.5` | 480p 0,1025; 720p 0,23; 1080p 0,614; 4K 0,921 | 4–30 s | la alegere |
-| `pvideo2` (schița) | `prunaai:p-video@2` | 720p 0,025; ciornă 0,015 | 4–8 s | fără |
+| `pvideo2` (schița) | `prunaai:p-video@2` | 720p 0,025; ciornă 0,015 | 1–20 s (schița are durata finalului, cel mult 20 s) | fără |
 
 Cererea video: `inputs.frameImages:[{image, frame:'first'}]` = poza de start (decupată în telefon la formatul ales). Mărimea: Kling Flash urmează poza; celelalte primesc `resolution`. Veo: `providerSettings.google.generateAudio`; Seedance: `settings.audio`; P-Video-2: `settings.draft`.
 Toate sarcinile sunt `deliveryMethod:'async'` + `includeCost:true`; aplicația întreabă cu `getResponse`. Costul real din răspuns intră în totaluri; fără el, se folosește estimarea.
@@ -55,12 +55,13 @@ Claude nu mai scrie promptul liber: dă planul în JSON (`scene`, `visible` = ce
 Taifas și Animas sunt pe aceeași adresă (`costi1622.github.io`), deci în același Chrome văd aceeași memorie a telefonului. Animas **doar citește** baza `taifas2` (personajele, pozele, cheile); dacă Taifas nu există în acel browser, deschiderea e anulată ca să nu creeze o bază goală care l-ar strica. Se copiază: numele, poza de profil, portretul de aproape (`closeRef`), poza întreagă (`photoFull`), descrierea fizică (`physEn`), și al doilea personaj din duo-uri. Reimportul actualizează, nu dublează. Cheile se preiau doar dacă sunt în telefon (nu din seiful Worker).
 
 ## Teste
-`test-animas-100.py` (Playwright, Claude și Runware simulate): 105 verificări în browser + `test-prompt-120.js` (Node, 41 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
+`test-animas-100.py` (Playwright, Claude și Runware simulate): 110 verificări în browser + `test-prompt-120.js` (Node, 41 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
 Rulare: `python3 test-animas-100.py <dosarul animas>` (lângă el: `fata.jpg`, `corp.jpg`, `clip.webm`).
 
 ## Istoric
 | Versiune | Data | Ce |
 | --- | --- | --- |
+| 1.2.1 | 20.11.2026 | schița are durata aleasă (P-Video-2 acceptă 1–20 s; înainte era tăiată greșit la 8 s); peste 20 s, schița are 20 s și se spune |
 | 1.2 | 20.11.2026 | promptul asamblat în aplicație pe strategia fiecărui model, din planul structurat; limita de 2.000 verificată (nu tăiere la 2.500); fazele acțiunilor complexe; corpul ancorat pe ce se vede; mișcare naturală; contor de caractere |
 | 1.1 | 20.11.2026 | fidelitatea față de text: planul pe secunde, promptul scris din plan, verificarea pașilor în clip, refacerea cu pașii lipsă accentuați; $0,00 în loc de $0,000 |
 | 1.0.2 | 20.11.2026 | creditul insuficient la Runware: mesaj clar, „Reia” trimite din nou cererea eșuată |

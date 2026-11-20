@@ -20,7 +20,7 @@ const MODELE = {
   seed25: {id:'bytedance:seedance@2.5', nume:'Seedance 2.5', rol:'clipuri lungi',
     res:{'480p':[.1025, .1025], '720p':[.23, .23], '1080p':[.614, .614], '4K':[.921, .921]}, dur:range(4, 30), def:5, audio:'switch', size:'resolution', aspects:['9:16', '16:9', '1:1']},
   pvideo2: {id:'prunaai:p-video@2', nume:'P-Video-2', rol:'schiță',
-    res:{'720p':[.025, .025]}, draftUsd:.015, dur:range(4, 8), def:5, audio:'off', size:'resolution', aspects:['9:16', '16:9', '1:1']}
+    res:{'720p':[.025, .025]}, draftUsd:.015, dur:range(1, 20), def:5, audio:'off', size:'resolution', aspects:['9:16', '16:9', '1:1']}
 };
 function range(a, b){ const o = []; for(let i = a; i <= b; i++) o.push(i); return o; }
 const SCHITA = {model:'pvideo2', res:'720p', draft:true};

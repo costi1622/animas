@@ -62,7 +62,7 @@ const MODEL_PLAN = {
   veo31:'Veo 3.1 (4–8 s): cinematic, best with 2–4 steps; prefer fewer, fuller actions.',
   veo31f:'Veo 3.1 Fast (4–8 s): best with 2–4 steps; prefer fewer, fuller actions.',
   seed25:'Seedance 2.5: strong at long sequences of actions in order; at most 1 step per 1.5 s.',
-  pvideo2:'P-Video-2 (draft model, 4–8 s): keep to 1–3 simple steps, no phases longer than 2 clauses.'
+  pvideo2:'P-Video-2 (draft preview of the same clip, 1–20 s): plan the same steps as for the final clip; keep phases short.'
 };
 // planul + promptul video (asamblat în prompt.js) din textul tău și poza de start; missing = pașii pe care o încercare anterioară nu i-a arătat
 async function clVideoPrompt({text, start, mk, sec, audio, persona, missing}, signal){

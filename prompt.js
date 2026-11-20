@@ -27,7 +27,7 @@ const STRAT = {
   seed25:{budget:1800, ref:'the first frame', time:'stamps', audio:'switch',
     lead:'Single continuous shot starting from the first frame. The actions happen one after another, in this order:',
     motion:'Smooth, continuous, physically plausible movement; the whole body takes part in each action; no jerks, no freezing between actions.'},
-  pvideo2:{budget:700, ref:'the first frame', time:'then', audio:'off',
+  pvideo2:{budget:1200, ref:'the first frame', time:'then', audio:'off',
     lead:'Continuous shot from the first frame.',
     motion:'Smooth natural motion.'}
 };

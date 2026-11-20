@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.2';
+const APP_VER = '1.2.1';
 
 /* ───────── utilitare ───────── */
 const $ = s => document.querySelector(s);
@@ -157,12 +157,15 @@ async function setAspect(a){ S.aspect = a; renderOpts(); await applyAspect(); }
 function clipCost(final = true){
   const m = MODELE[S.mk];
   return final ? costClip(S.mk, S.res, +S.sec, m.audio === 'always' || (m.audio === 'switch' && S.audio), false)
-    : costClip(SCHITA.model, SCHITA.res, Math.min(8, Math.max(4, +S.sec)), false, true);
+    : costClip(SCHITA.model, SCHITA.res, draftSec(+S.sec), false, true);
 }
+// 1.2.1: schița are aceeași durată ca finalul (P-Video-2 acceptă 1–20 s pe Runware; 1.0–1.2 o tăiau greșit la 8 s)
+const draftSec = sec => Math.min(20, Math.max(1, +sec || 5));
 function renderCostLine(){
   const el = $('#oCost'); if(!el) return;
   const f = clipCost(true), d = clipCost(false), today = ((S.costs || {}).days || {})[dayKey()] || 0;
   el.innerHTML = `Schiță: <b>${usdC(d.usd)}</b> · Final: <b>${f.min ? 'de la ' : ''}${usdC(f.usd)}</b>${f.min ? ' <span class="muted">(preț 1080p nepublicat; costul real apare după clip)</span>' : ''} · Azi: ${usdC(today)}`;
+  if(+S.sec > 20) el.innerHTML += ` <span class="muted">(schița: 20 s, maximul P-Video-2)</span>`;
   const bd = $('#btnDraft'), bf = $('#btnFinal'); if(bd) bd.textContent = `Schiță · ${usdC(d.usd)}`; if(bf) bf.textContent = `Clip final · ${f.min ? '≥' : ''}${usdC(f.usd)}`;
 }
 function renderPrompt(){
@@ -188,7 +191,7 @@ async function preparePrompt(mk = S.mk, sec = +S.sec, audio = S.audio){
   if(!C.text.trim()) throw new Error('Scrie ce să facă personajul.');
   if(S.useClaude !== 'on' || !S.clKey){ C.prompt = C.text; C.steps = []; C.fits = true; C.nota = 'fără Claude: textul tău merge direct la model'; C.edited = false; C.promptKey = promptKey(mk); renderPrompt(); return C.prompt; }
   const c = charById(C.charId), m = MODELE[mk];
-  if(mk === SCHITA.model) sec = Math.min(8, Math.max(4, sec));
+  if(mk === SCHITA.model) sec = draftSec(sec);
   const r = await clVideoPrompt({text:C.text, start:C.start, mk, sec, audio:m.audio === 'always' || (m.audio === 'switch' && audio), persona:c && c.desc, missing:C.missing});
   if(!r.video) throw new Error(r.nota || 'Claude a refuzat cererea.');
   C.prompt = r.video; C.steps = r.steps; C.fits = r.fits; C.secSuggest = r.secSuggest; C.nota = r.nota + ' · ' + usdC(r.usd); C.edited = false; C.promptKey = promptKey(mk); renderPrompt();
@@ -203,7 +206,7 @@ async function send(final){
     if(!C.prompt || (!C.edited && C.promptKey !== promptKey(tmk))){ btn.textContent = 'Claude scrie promptul…'; await preparePrompt(tmk); }
     if(String(C.prompt).trim().length > PROMPT_MAX) throw new Error(`Promptul are ${String(C.prompt).trim().length} caractere; Runware primește cel mult ${PROMPT_MAX}. Scurtează-l sau șterge-l ca să-l refacă Claude.`);
     const mk = final ? S.mk : SCHITA.model, m = MODELE[mk];
-    const p = {mk, res:final ? S.res : SCHITA.res, sec:final ? +S.sec : Math.min(8, Math.max(4, +S.sec)), audio:final ? (m.audio === 'always' || (m.audio === 'switch' && !!S.audio)) : false, draft:!final, aspect:S.aspect};
+    const p = {mk, res:final ? S.res : SCHITA.res, sec:final ? +S.sec : draftSec(+S.sec), audio:final ? (m.audio === 'always' || (m.audio === 'switch' && !!S.audio)) : false, draft:!final, aspect:S.aspect};
     const est = costClip(p.mk, p.res, p.sec, p.audio, p.draft);
     const startKey = await putBlob('img', C.start);
     const job = {id:uid(), at:Date.now(), charId:C.charId, text:C.text, prompt:C.prompt, nota:C.nota, steps:C.edited ? [] : (C.steps || []), start:startKey, startScore:C.score ?? null, ...p, est:est.usd, estMin:est.min, state:'trimit'};
