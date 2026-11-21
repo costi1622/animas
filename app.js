@@ -1,4 +1,4 @@
-/* Animas 1.0.1 — poză + ce vrei să facă personajul → clip video realist.
+/* Animas 1.8.0 — poză + ce vrei să facă personajul → clip video realist.
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
