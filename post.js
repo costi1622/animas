@@ -44,11 +44,11 @@ async function postJob(kind, x, opts){
   if(!S.rwKey) return toast('Lipsește cheia Runware (Setări).');
   const src = clipSrc(x); if(!src) return toast('Clipul e dinainte de 1.6 (fără codul de la Runware): nu se poate prelucra. Merge pe clipurile noi.', 6000);
   const est = kind === 'replace' ? costReplace(x, opts.res) : kind === 'upscale' ? costUpscale(x, opts.res, opts.fps, opts.turbo) : costLipsync(x, (opts.text || '').length);
-  const job = {id:uid(), at:Date.now(), kind, src:x.id, charId:x.charId, mk:x.mk, res:opts.res || x.res, sec:x.sec, aspect:x.aspect, draft:x.draft, est, opts, state:'trimit', text:x.text, prompt:x.prompt};
+  const job = {id:uid(), at:Date.now(), kind, src:x.id, charId:x.charId, mk:x.mk, res:opts.res || x.res, sec:x.sec, aspect:x.aspect, draft:x.draft, est, opts, callSet:opts.callSet||null, state:'trimit', text:x.text, prompt:x.prompt};
   jobs.unshift(job); await saveJobs();
   if(!opts.quiet){ closeSheet(); go('creeaza'); } renderJobs();
   runJob(job);
-  toast(opts.quiet ? `Fața a ieșit sub ${ID_OK}%: o repar automat (${usdC(est)}).` : {replace:'Repararea feței a pornit.', upscale:'Mărirea a pornit.', lipsync:'Dublajul a pornit.'}[kind] + ' ' + usdC(est), 5000);
+  toast(opts.quiet ? (kind==='lipsync' ? `Generez vocea și sincronizarea buzelor (${usdC(est)} estimat).` : `Fața a ieșit sub ${ID_OK}%: o repar automat (${usdC(est)}).`) : {replace:'Repararea feței a pornit.', upscale:'Mărirea a pornit.', lipsync:'Dublajul a pornit.'}[kind] + ' ' + usdC(est), 5000);
 }
 // sarcina Runware a unei prelucrări (lipsync: întâi vocea, o singură dată — adresa ei se ține pe lucrare)
 async function postTask(job){

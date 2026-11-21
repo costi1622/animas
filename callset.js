@@ -119,22 +119,24 @@ function csRoleConfig(s, role){ return (s && s.roleConfig && s.roleConfig[role])
 function csConfigure(role){
   const c=charById(C.charId), s=c && csGet(c.id,CS.place,true);
   if(!s || !s.frame) return toast('Pune întâi imaginea de apel.');
-  const cfg=csRoleConfig(s,role); CS.customRole=role;
+  const cfg=csRoleConfig(s,role); const voice=cfg.voice||c.ttsVoice||'Gacrux', style=cfg.style||c.ttsStyle||'warm'; CS.customRole=role;
   const html=`<div class="box"><h3>🎬 Call Studio · ${esc(csRoleName(role))}</h3>
     <p class="muted">Pregătește un clip reutilizabil pentru apeluri libere sau notează o replică pentru producția audio ulterioară.</p>
-    <label>Tip de clip<select id="csMode"><option value="reusable" ${cfg.mode!=='scripted'?'selected':''}>Reutilizabil · fără replică fixă</option><option value="scripted" ${cfg.mode==='scripted'?'selected':''}>Replică fixă · pregătire scenariu (fără audio automat)</option></select></label>
+    <label>Tip de clip<select id="csMode"><option value="reusable" ${cfg.mode!=='scripted'?'selected':''}>Reutilizabil · fără replică fixă</option><option value="scripted" ${cfg.mode==='scripted'?'selected':''}>Replică fixă · video + voce + lip-sync</option></select></label>
     <label>Indicații pentru mișcare<textarea id="csDirection" rows="3" maxlength="700" placeholder="Ex.: zâmbet cald, mișcări lente">${esc(cfg.direction||'')}</textarea></label>
     <label>Replica exactă (doar pentru modul cu scenariu)<textarea id="csDialogue" rows="3" maxlength="500" placeholder="Hello, sweetheart...">${esc(cfg.dialogue||'')}</textarea></label>
-    <p class="warn">Important: această etapă generează video-ul și salvează scenariul, dar NU produce încă voce sau lip-sync. Taifas va continua să genereze răspunsurile live.</p>
+    <label>Vocea personajului<select id="csVoice">${TTS_VOICES.map(v=>`<option value="${v}" ${v===voice?'selected':''}>${v}</option>`).join('')}</select></label>
+    <label>Stil vocal<select id="csStyle">${Object.keys(TTS_STYLES).map(v=>`<option value="${v}" ${v===style?'selected':''}>${{warm:'Cald, matur, afectuos',gentle:'Blând și liniștitor',playful:'Jucăuș',neutral:'Neutru'}[v]}</option>`).join('')}</select></label>
+    <p class="muted">Modul cu replică fixă produce mai întâi video-ul, apoi vocea și lip-sync-ul prin Runware (cost suplimentar). Clipul final rămâne în galerie pentru integrarea ulterioară cu Taifas. Rolul actual de apel nu este înlocuit automat.</p>
     <div class="row wrap"><button id="csConfigGo">Salvează și generează</button><button id="csConfigCancel" class="ghost">Anulează</button></div></div>`;
   sheet(html);
   const box=document.getElementById('sheet');
   const close=()=>{closeSheet();CS.customRole=null;};
   box.querySelector('#csConfigCancel').onclick=close;
   box.querySelector('#csConfigGo').onclick=async()=>{
-    const mode=box.querySelector('#csMode').value, direction=box.querySelector('#csDirection').value.trim(), dialogue=box.querySelector('#csDialogue').value.trim();
+    const mode=box.querySelector('#csMode').value, direction=box.querySelector('#csDirection').value.trim(), dialogue=box.querySelector('#csDialogue').value.trim(), voice=box.querySelector('#csVoice').value, style=box.querySelector('#csStyle').value;
     if(mode==='scripted' && !dialogue) return toast('Scrie replica exactă pentru acest mod.');
-    s.roleConfig=s.roleConfig||{};s.roleConfig[role]={mode, direction, dialogue:mode==='scripted'?dialogue:''};
+    s.roleConfig=s.roleConfig||{};s.roleConfig[role]={mode, direction, dialogue:mode==='scripted'?dialogue:'',voice,style};
     try { await csTouch(s); close(); await csMake([role]); } catch(e) { console.error('Call Studio:',e); toast('Nu pot genera clipul: '+(e.message||e),6000); }
   };
 }
@@ -149,7 +151,7 @@ async function csMake(roles){
   for(const role of roles){
     const job = {id:uid(), at:Date.now(), charId:c.id, text:'📞 Apel · ' + csRoleName(role), prompt:csPrompt(role, s.place) + (csRoleConfig(s,role).direction ? ' ' + csRoleConfig(s,role).direction : ''), nota:'', steps:[], start:s.frame, startScore:null,
       end:role !== 'bye' && MODELE[p.mk].last ? s.frame : null, endPose:'', endScore:null, mk:p.mk, res:p.res, sec:p.sec, audio:p.audio, draft:false, aspect:'9:16', est:p.usd, estMin:false, state:'trimit',
-      callSet:{sid:s.id, role, mode:csRoleConfig(s,role).mode, dialogue:csRoleConfig(s,role).dialogue}};
+      callSet:{sid:s.id, role, mode:csRoleConfig(s,role).mode, dialogue:csRoleConfig(s,role).dialogue,voice:csRoleConfig(s,role).voice||c.ttsVoice||'Gacrux',style:csRoleConfig(s,role).style||c.ttsStyle||'warm'}};
     jobs.unshift(job); await saveJobs(); runJob(job);
   }
   renderJobs(); renderCallSet();
@@ -158,6 +160,12 @@ async function csMake(roles){
 // chemată din runJob când un clip de set e gata
 async function csGot(job, clip){
   const s = callsets.find(x => x.id === job.callSet.sid); if(!s) return;
+  if(job.callSet.mode==='scripted'){
+    if(!job.callSet.dialogue || !clipSrc(clip)) return toast('Clipul de bază este gata, dar nu poate fi dublat automat. Folosește „Pune vocea” din galerie.',6500);
+    await postJob('lipsync',clip,{text:job.callSet.dialogue,voice:job.callSet.voice,style:job.callSet.style,callSet:{...job.callSet},quiet:true});
+    toast('Video-ul este gata. Se generează vocea și lip-sync-ul pentru rolul '+csRoleName(job.callSet.role)+'.',6000);
+    return;
+  }
   const old = s.clips[job.callSet.role];
   await csAssign(s, job.callSet.role, clip, true);
   if(old && old !== clip.id) delete s.chk[old];
@@ -244,7 +252,7 @@ function renderCallSet(){
       if(fp != null && !k.wait) st += fp < ID_OK ? ` <span class="warn">· fața ${fp}%: pare altă persoană</span>` : ` <span class="muted">· fața ${fp}%</span>`; }
     return `<div class="csrole" data-r="${r}">${x && x.th ? `<img data-k="${x.th}" alt="">` : '<span class="ph">—</span>'}<div><b>${n}</b><br>${st}</div><div class="csbtn">
       <button class="sm" ${s && s.frame && !jb ? '' : 'disabled'} onclick="csConfigure('${r}')">${x ? '↻ Refă' : 'Fă'}</button><button class="sm ghost" onclick="csPick('${r}')">Alege</button>
-      ${s && s.roleConfig && s.roleConfig[r] && s.roleConfig[r].mode==='scripted' ? '<small class="muted"> · scenariu salvat (fără audio)</small>' : ''}${x && k && !k.ok && !k.wait ? `<button class="sm ghost" onclick="csRecheck('${r}')">Verifică iar</button>` : ''}${x ? `<button class="sm ghost" onclick="csClear('${r}')" aria-label="Scoate">✕</button>` : ''}</div></div>`;
+      ${s && s.roleConfig && s.roleConfig[r] && s.roleConfig[r].mode==='scripted' ? '<small class="muted"> · dialog fix</small>' : ''}${x && k && !k.ok && !k.wait ? `<button class="sm ghost" onclick="csRecheck('${r}')">Verifică iar</button>` : ''}${x ? `<button class="sm ghost" onclick="csClear('${r}')" aria-label="Scoate">✕</button>` : ''}</div></div>`;
   };
   el.innerHTML = `<section class="box"><h3>Set pentru apel · ${esc(c.name)}</h3><p class="muted">Bibliotecă extinsă · ${CS_ROLES.length} roluri standard</p>
     ${c.srcId ? `<p class="muted">Taifas îl preia singur când îl deschizi și îl folosește în apelurile video cu ${esc(c.name)}, fără cost în apel (Taifas → Setări → Apeluri → 📚).</p>` : '<p class="warn">Personajul nu e din Taifas: setul se poate face, dar Taifas nu-l vede. Importă personajul din Taifas (Personaje → Importă din Taifas) și fă setul pe cel importat.</p>'}

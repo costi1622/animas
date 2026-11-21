@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.9.4';
+const APP_VER = '1.9.5';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -496,8 +496,14 @@ async function finishPost(job, x, vb, vid, rw, cost){
   const tag = {replace:'fața reparată', upscale:`mărit ${job.opts.res}${job.opts.fps ? ' · ' + job.opts.fps + ' fps' : ''}`, lipsync:'cu voce'}[job.kind];
   const clip = {...src, id:uid(), at:Date.now(), parent:src.id || null, kind:job.kind, tag, vid, th, rw, cost:cost + (job.ttsCost || 0), costReal:+x.cost > 0, score, body,
     res:job.kind === 'upscale' ? job.opts.res : job.kind === 'replace' ? job.opts.res : src.res, lipText:job.kind === 'lipsync' ? job.opts.text : src.lipText || '', group:null, alt:false};
+  if(job.callSet && job.kind==='lipsync'){
+    clip.callStudio={mode:'scripted',dialogue:job.callSet.dialogue,voice:job.callSet.voice,style:job.callSet.style,role:job.callSet.role};
+  }
   clips.unshift(clip); await saveClips();
   jobs = jobs.filter(j => j.id !== job.id); await saveJobs();
+  // Nu atribui automat clipul cu dialog fix rolului din apel: Taifas 14.9.2
+  // încă ignoră pista audio și ar putea afișa o replică nepotrivită.
+  // Clipul final rămâne în galerie cu metadatele callStudio pentru etapa de integrare.
   toast(`Gata: ${tag} · ${usdC(clip.cost)}${job.kind === 'replace' && score && score.avg != null ? ' · fața ' + score.avg + '%' : ''}`, 5000);
   if(!$('#v-creeaza').hidden){ renderJobs(); renderLast(); } else if(!$('#v-galerie').hidden) renderGallery();
 }
