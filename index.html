@@ -38,6 +38,10 @@ label.chk input{width:auto;margin-top:3px}
 .csframe{display:flex;gap:10px;margin:10px 0}.csframe img,.csframe .empty{width:96px;height:170px;object-fit:cover;border-radius:10px;flex:none}.csframe .empty{display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;border:1px dashed var(--line)}
 .csrole{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:14px}.csrole img,.csrole .ph{width:40px;height:70px;object-fit:cover;border-radius:6px;flex:none;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.05)}.csrole>div:nth-child(2){flex:1;min-width:0}.csbtn{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-width:45%}
 .cspick .csrow{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)}.cspick img{width:56px;height:100px;object-fit:cover;border-radius:8px;flex:none}.cspick h3{margin:14px 0 4px}.cspick .csrow.on{background:rgba(255,255,255,.06);border-radius:8px}#csPrevBox:not(:empty){margin:8px 0}
+.mjrow{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}.mjrow.bad{opacity:.75}.mjth{position:relative;flex:none}.mjth img,.mjth>span{width:54px;height:96px;object-fit:cover;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.05)}.mjth .pos{position:absolute;top:4px;left:4px;width:22px;height:22px;border-radius:50%;background:var(--acc);color:#1a0d08;font:700 12px PJS,system-ui;display:flex;align-items:center;justify-content:center}
+.mjmid{flex:1;min-width:0;font-size:14px}.mjbtn{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-width:38%}.mjtrim{font-size:13px;margin-top:6px}.mjtrim input{width:64px;padding:4px 6px;display:inline-block}
+.mjt{font-size:13px;margin:2px 0 2px 64px;padding:6px 10px;border-left:3px solid var(--line);border-radius:4px;background:rgba(255,255,255,.03)}.mjt select{width:auto;display:inline-block;padding:2px 6px;font-size:12px;margin-left:6px}.mjt.vb,.mjsum.vb{border-color:var(--ok)}.mjt.b,.mjsum.b{border-color:#8fbf6a}.mjt.inc,.mjsum.inc{border-color:var(--warn)}.mjt.man,.mjsum.man{border-color:var(--bad)}
+.mjsum{margin:10px 0;padding:10px;border-left:4px solid var(--line);border-radius:6px;background:rgba(255,255,255,.04);font-size:14px}.mjsum ul{margin:6px 0 4px 18px;padding:0;font-size:13px}.mjprog{margin:10px 0;font-size:13px}.mjprog .bar{height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;margin-bottom:6px}.mjprog .bar i{display:block;height:100%;background:var(--acc);transition:width .3s}.btn.off{opacity:.45;pointer-events:none}.mjpick input{width:auto;flex:none;align-self:center}
 .muted{color:var(--mut);font-size:13px}.ok{color:var(--ok)}.warn{color:var(--warn)}.errtxt{color:var(--bad);font-size:13px;margin-top:4px}.bad{color:var(--bad)}
 ol.steps{margin:6px 0 4px;padding-left:22px;font-size:14px}ol.steps li{margin:3px 0}.sec{color:var(--acc2);font-variant-numeric:tabular-nums;font-size:13px}
 #pSteps .warn{font-size:13px;margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -153,6 +157,10 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
     <div class="cards" id="gList"></div>
   </div>
 
+  <div class="view" id="v-montaj" hidden>
+    <div class="row" style="justify-content:space-between;align-items:center"><h2>🎞 Montaj AI</h2><button class="sm ghost" onclick="go('galerie')">← Galerie</button></div>
+    <div id="mjBody"></div>
+  </div>
   <div class="view" id="v-personaje" hidden>
     <h2>Personaje</h2>
     <div class="row wrap"><button onclick="taifasPick()">Importă din Taifas</button><button class="ghost" onclick="editChar('')">Personaj nou</button></div>
@@ -195,6 +203,10 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
 <script src="post.js"></script>
 <script src="story.js"></script>
 <script src="callset.js"></script>
+<script src="videoMerger.js"></script>
+<script src="videoAnalyzer.js"></script>
+<script src="continuityEngine.js"></script>
+<script src="montaj.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

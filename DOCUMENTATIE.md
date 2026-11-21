@@ -1,6 +1,6 @@
 # Animas — documentație
 
-Versiunea **1.8.1** (21 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
+Versiunea **1.9.0** (21 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
 Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · publicare: arhiva ZIP urcată în rădăcina repo-ului, workflow-ul `publica.yml` o dezarhivează și o publică pe GitHub Pages.
 
 ## Principii
@@ -22,9 +22,13 @@ Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · public
 | `post.js` | 1.6: reparatul feței (P-Video-Replace), mărirea și fluidizarea (P-Video-Upscale), vocea (ElevenLabs v3, română) + buzele (sync lipsync-2) |
 | `callset.js` | 1.8: biblioteca pentru apel extinsă la 30 de roluri, cu ID-urile primelor 8 păstrate pentru compatibilitate cu Taifas 14.9 |
 | `story.js` | 1.6: povești lungi din mai multe scene, redarea continuă, salvarea într-un singur fișier; alegerea automată a modelului |
+| `videoAnalyzer.js` | 1.9.0 Montaj AI: metadatele (antetul MP4/MOV fără decodare + `<video>`), cadrele (0/25/50/75/100% + capetele fine din 0,25 în 0,25 s), postura pe fiecare cadru (MoveNet), rezervă prin FFmpeg când telefonul nu poate reda fișierul |
+| `continuityEngine.js` | 1.9.0: scorul fiecărei perechi A→B la cel mai bun punct de tăiere, ordinea exactă (Held-Karp), planul (tranziții, tăieturi, motive, avertismente), cererea și validarea strictă a JSON-ului de la Claude |
+| `videoMerger.js` | 1.9.0: FFmpeg.wasm în telefon (încărcare din bucăți, normalizare clip cu clip, lipire, fondu, verificare, progres, anulare, erori de memorie) |
+| `montaj.js` | 1.9.0: ecranul 🎞 Montaj AI (alegere, analiză, ordine, tăieturi, previzualizare, export în galerie) |
 | `face.js` | face-api (fața + 68 de puncte + vârsta) și ArcFace (amprenta de 512 numere) |
 | `sw.js`, `manifest.webmanifest`, `icon*` | instalare ca aplicație, funcționare fără rețea pentru ecrane |
-| `vendor/` | face-api, ONNX Runtime Web, ArcFace (bucăți de cel mult 5 MB), `pose/` MoveNet Lightning (4,6 MB, din @vladmandic/human-models 3.0.4) |
+| `vendor/` | 1.9.0: `ffmpeg/` FFmpeg.wasm 0.12 (un fir; wasm-ul de 32.232.419 octeți în 7 bucăți de cel mult 5 MB), încărcat doar la export; face-api, ONNX Runtime Web, ArcFace (bucăți de cel mult 5 MB), `pose/` MoveNet Lightning (4,6 MB, din @vladmandic/human-models 3.0.4) |
 
 ## Modelele (prețuri Runware, verificate 19.11.2026)
 | Cheie | Model Runware | Rezoluții, $/s (fără / cu sunet) | Durate | Sunet |
@@ -56,6 +60,17 @@ MoveNet Lightning rulează în telefon prin TensorFlow.js din face-api (`faceapi
 - **Ce se vede** în cadrul final (tot corpul / cap–genunchi / cap–șolduri / cap și umeri) apare sub poză și merge la Claude și în prompt: „Framing: …; păstrează încadrarea, nu inventa părți ale corpului din afara cadrului”.
 - **Semnele distinctive** (alunițe, pistrui, tatuaje, ochelari, bijuterii, machiaj) intră în descrierea „ce se vede” și în regula de identitate.
 - **Proporțiile în clip:** rapoarte care nu depind de distanță (umeri/trunchi, șolduri/umeri, braț/antebraț, coapsă/gambă), comparate cu poza de start pe cele 8 cadre; mediana abaterilor → procent (5% → 90, 10% → 80 = pragul, 15% → 70). Aproximativ: unghiul și poziția schimbă măsurătorile; nu măsoară forme de sub haine.
+
+## 1.9.0 — 🎞 Montaj AI (AI Video Continuity)
+**Unde:** Galerie → „🎞 Montaj AI” (sau Selectează 2–10 clipuri → „🎞 Montaj (n)”). Ecran nou `v-montaj` (`go('montaj')`); meniul de jos rămâne pe Galerie.
+**Fluxul:** alegi 2–10 clipuri (din galerie și/sau din telefon, „+ Din telefon”) → „🧠 Analizează” → ordinea propusă, cu scorul fiecărei îmbinări și motivul → o schimbi dacă vrei (⬆⬇, tăieturile la început/final, tăietură directă sau fondu 0,4 s) → „▶ Previzualizează” (clipurile pe rând, cu tăieturile, fără codare) → „🎬 Generează videoclipul final” → MP4 în galerie („Montaj AI · n clipuri”, `mk:'Montaj AI'`, `montaj:{from, names, trims, trans, w, h, fps, size, overall}`). „Anulează” oprește analiza sau exportul oricând; nimic nu se salvează pe jumătate.
+**Analiza (videoAnalyzer):** clipurile se citesc pe rând (nu toate în memorie). Metadatele: durată, rezoluție, fps (antetul MP4; la WebM, numărate în ~0,5 s de redare), codec, sunet, dimensiune, format. Cadrele: 0/25/50/75/100% + primele și ultimele ~1,5 s din 0,25 în 0,25 s (cel mult 19 cadre de 320 px). Pe fiecare: alb-negru 36×64, histograma culorilor, postura (MoveNet: centrul, distanța = umerii față de cadru, capul = nasul față de umeri, brațele = coate/încheieturi). Fișier stricat → „nu se poate citi”, lăsat deoparte.
+**Scorul A→B (continuityEngine):** se caută perechea de cadre (finalul lui A × începutul lui B) care se potrivește cel mai bine (tăiem cât mai puțin); acolo e tăietura. Componente: imaginea 30%, postura 15%, brațele 10%, capul 10%, distanța 10%, mișcarea 15% (direcția și viteza de la finalul lui A față de începutul lui B, din postură sau din deplasarea imaginii), momentul acțiunii 10% (B nu reia de la capăt aceeași acțiune ca A: „momente incompatibile”). Cu Claude: 55% măsurat + 45% Claude. Fondu doar unde imaginea sare (scor < 50% și imaginea < 40%); altfel tăietură directă (sau ce spune Claude).
+**Ordinea:** exactă, pe tot montajul (nu doar perechi vecine): programare dinamică pe submulțimi (Held-Karp), plus un mic bonus pentru începutul / finalul natural după Claude. La 10 clipuri: ~100.000 de pași.
+**Claude:** o singură cerere: pentru fiecare clip 3 cadre de 384 px (început, mijloc, final) + metadatele + măsurătorile → JSON (`clips`, `pairs` pentru toate perechile, `order`, `trims`, `incompatible`, `confidence`, `enough`, `warnings`). Validare strictă: doar `c1…cN`, numere finite 0–1, tăieturi ≥ 0 și ≤ 40% din clip cu ≥ 0,5 s rămase, ordinea doar dacă e o permutare; restul ignorat, cu avertisment. Eroare / fără JSON / fără cheie → avertisment și ordinea doar din măsurători. Scorurile sunt estimări interne: 90–100% foarte bună, 75–89% bună, 50–74% incertă, sub 50% de verificat manual.
+**Lipirea (videoMerger, FFmpeg.wasm):** formatul montajului = raportul cel mai des întâlnit; rezoluția = cea mai mare din el, fără mărire, latura scurtă ≤ 1080 (sau 720 la alegere, sau automat pe telefoanele cu ≤ 2 GB); fps comun sau 30 dacă diferă. Fiecare clip, pe rând: tăiere exactă la cadre întregi → scalare fără deformare (margini negre doar dacă formatele diferă și alegi „păstrează tot”; altfel „umple ecranul”) → fps → sunetul lui sau liniște (dacă alt clip are sunet) → H.264 (CRF 20, veryfast) + AAC 128k. Apoi: doar tăieturi → lipire fără recodare (concat); cu fondu → `xfade` + `acrossfade` (aceeași bază de timp pe toate intrările). Fără interpolare, încetinire, stabilizare sau alte efecte. Verificarea: decodare completă fără erori, durata așteptată (±0,6 s), antet `ftyp`, apoi redarea în telefon. Limite: un clip > 450 MB sau totalul > 1,6 GB → refuzat cu propunere; „Aborted(OOM)” / memorie → mesaj clar, FFmpeg repornit.
+**Offline:** FFmpeg (~32 MB) se descarcă la primul export și rămâne în copia telefonului (`animas-lib-1`, care nu se mai șterge la versiunile noi); după aceea, montajul merge fără rețea (Claude nu: atunci ordinea e doar din măsurători).
+**Service worker:** `animas-v16`; `vendor/` vine întâi din copie, într-un cache separat `animas-lib-1`.
 
 ## 1.8.1
 - Vizualizatorul clipului permite redenumirea, selectarea personajului, locului și rolului și atribuirea directă în setul pentru apel.
@@ -121,10 +136,12 @@ Taifas și Animas sunt pe aceeași adresă (`costi1622.github.io`), deci în ace
 ## Teste
 `test-animas-100.py` (Playwright, Claude și Runware simulate): 216 verificări în browser + `test-viewer-181.py` (8 verificări pentru redenumirea/atribuirea clipurilor) + `test-prompt-120.js` (Node, 43 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
 Rulare: `python3 test-animas-100.py <dosarul animas>` (lângă el: `fata.jpg`, `corp.jpg`, `clip.webm`).
+1.9.0: `test-montaj-190.py` (Playwright, 42 de verificări, clipuri reale în `teste/montaj/`, Claude simulat; MP4-urile verificate și cu `ffprobe` + decodare completă): cele 15 cazuri — 2 clipuri în ordine / inversate, 3 amestecate, continuitate slabă, durate / rezoluții / fps diferite, cu și fără sunet, fișier stricat, anulare, fără rețea, eroare Claude (500 și fără JSON, plus JSON cu valori greșite), eroare FFmpeg, memorie (OOM, fișiere prea mari, telefon cu 2 GB) — plus importul din telefon și limita de 10. Cazul „redare pe Android” nu se poate rula aici. Rulare: `python3 teste/test-montaj-190.py .`
 
 ## Istoric
 | Versiune | Data | Ce |
 | --- | --- | --- |
+| 1.9.0 | 21.11.2026 | 🎞 Montaj AI: 2–10 clipuri → analiză (telefon + Claude) → ordinea optimă, tăieturi, tranziții → MP4 local cu FFmpeg.wasm, în galerie; `vendor/` într-o copie care rămâne între versiuni |
 | 1.8.1 | 21.11.2026 | redenumire și atribuire directă a clipurilor din vizualizator către personaj, loc și rol; bază pentru imaginea de apel din cadrul de start |
 | 1.8.0 | 21.11.2026 | biblioteca pentru apel extinsă la 30 de roluri; metadate de tranziție; cache PWA nou; compatibilitate cu Taifas 14.9 |
 | 1.7.1 | 20.11.2026 | „Alege” din toată galeria, cu previzualizare; fața măsurată la verificarea pentru apel |

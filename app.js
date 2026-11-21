@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.8.1';
+const APP_VER = '1.9.0';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -128,11 +128,11 @@ async function boot(){
   if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 function go(v){
-  if(!['creeaza', 'galerie', 'personaje', 'setari'].includes(v)) v = 'creeaza';
+  if(!['creeaza', 'galerie', 'personaje', 'setari', 'montaj'].includes(v)) v = 'creeaza';   // 1.9.0: + 🎞 Montaj AI (din Galerie)
   $$('.view').forEach(x => x.hidden = x.id !== 'v-' + v); if(v !== 'galerie') G.sel = null;
-  $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === (v === 'montaj' ? 'galerie' : v)));
   history.replaceState(null, '', '#' + v);
-  ({creeaza:renderCreate, galerie:renderGallery, personaje:renderChars, setari:renderSettings})[v]();
+  ({creeaza:renderCreate, galerie:renderGallery, personaje:renderChars, setari:renderSettings, montaj:renderMontaj})[v]();
 }
 
 /* ═════════ Creează ═════════ */
@@ -535,8 +535,8 @@ function renderGallery(){
   const tot = clips.reduce((a, x) => a + (x.cost || 0), 0), drafts = clips.filter(x => x.draft).length;
   $('#gSum').textContent = clips.length ? `${clips.length} clipuri · ${usdC(tot)} în total` : '';
   $('#gBar').innerHTML = !clips.length ? '' : G.sel
-    ? `<button class="danger" ${G.sel.size ? '' : 'disabled'} onclick="delClips([...G.sel])">🗑 Șterge (${G.sel.size})</button><button class="sm ghost" onclick="selAll()">${G.sel.size === clips.length ? 'Niciunul' : 'Toate'}</button><button class="sm ghost" onclick="selMode(false)">Anulează</button>`
-    : `<button class="sm ghost" onclick="selMode(true)">Selectează</button>${drafts ? `<button class="sm ghost danger" onclick="delClips(clips.filter(x => x.draft).map(x => x.id), ${drafts} === 1 ? 'schița' : 'toate cele ${drafts} schițe')">Șterge schițele (${drafts})</button>` : ''}`;
+    ? `<button class="danger" ${G.sel.size ? '' : 'disabled'} onclick="delClips([...G.sel])">🗑 Șterge (${G.sel.size})</button><button class="sm" ${G.sel.size >= 2 && G.sel.size <= MJ_MAX ? '' : 'disabled'} onclick="mjOpen([...G.sel])">🎞 Montaj (${G.sel.size})</button><button class="sm ghost" onclick="selAll()">${G.sel.size === clips.length ? 'Niciunul' : 'Toate'}</button><button class="sm ghost" onclick="selMode(false)">Anulează</button>`
+    : `<button class="sm ghost" onclick="selMode(true)">Selectează</button><button class="sm ghost" onclick="mjOpen()">🎞 Montaj AI</button>${drafts ? `<button class="sm ghost danger" onclick="delClips(clips.filter(x => x.draft).map(x => x.id), ${drafts} === 1 ? 'schița' : 'toate cele ${drafts} schițe')">Șterge schițele (${drafts})</button>` : ''}`;
   hydrate(el);
 }
 function selMode(on){ G.sel = on ? new Set() : null; renderGallery(); }
@@ -562,7 +562,7 @@ async function openClip(id){
       ${x.draft ? `<button onclick="reuse('${x.id}', true)">Fă clipul final</button>` : ''}
       ${missOf(x).length ? `<button onclick="reuse('${x.id}', false, true)">Refă cu pașii lipsă accentuați</button>` : ''}
       ${weakOf(x) ? `<button onclick="redoClip('${x.id}')">↻ Refă (${weakOf(x)})</button>` : ''}
-      <button class="ghost" onclick="reuse('${x.id}', false)">Refă / modifică</button>
+      ${x.montaj ? '' : `<button class="ghost" onclick="reuse('${x.id}', false)">Refă / modifică</button>`}
       <button class="ghost danger" onclick="delClips(['${x.id}'])">🗑 Șterge</button>
     </div>
     <div class="row wrap posts">
