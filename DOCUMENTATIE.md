@@ -1,6 +1,6 @@
 # Animas — documentație
 
-Versiunea **1.9.0** (21 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
+Versiunea **1.9.1** (21 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
 Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · publicare: arhiva ZIP urcată în rădăcina repo-ului, workflow-ul `publica.yml` o dezarhivează și o publică pe GitHub Pages.
 
 ## Principii
@@ -61,6 +61,11 @@ MoveNet Lightning rulează în telefon prin TensorFlow.js din face-api (`faceapi
 - **Semnele distinctive** (alunițe, pistrui, tatuaje, ochelari, bijuterii, machiaj) intră în descrierea „ce se vede” și în regula de identitate.
 - **Proporțiile în clip:** rapoarte care nu depind de distanță (umeri/trunchi, șolduri/umeri, braț/antebraț, coapsă/gambă), comparate cu poza de start pe cele 8 cadre; mediana abaterilor → procent (5% → 90, 10% → 80 = pragul, 15% → 70). Aproximativ: unghiul și poziția schimbă măsurătorile; nu măsoară forme de sub haine.
 
+## 1.9.1 — actualizarea sigură
+- **Cauza** (reprodusă): GitHub Pages trimite fișierele cu „păstrează 10 minute” (`Cache-Control: max-age=600`); service worker-ul le cerea din rețea, dar browserul le dădea din copia lui. După ce urcai o versiune, telefonul putea rămâne până la 10 minute (sau mai mult, cu aplicația deschisă) pe codul vechi. În test: 1.9.0 + app.js nou pe server → 3 reporniri, tot 1.9.0.
+- **Reparat:** (1) service worker-ul cere codul cu revalidare (`cache:'no-cache'`) și instalează cu `cache:'reload'`; e verificat la fiecare revenire în aplicație (`updateViaCache:'none'`, `registration.update()`); (2) scripturile din `index.html` au `?v=<versiunea>`: o versiune nouă = adrese noi = fișiere noi (**la fiecare versiune se schimbă odată cu `APP_VER`**); fără rețea, copia se găsește și fără `?v` (`ignoreSearch`); (3) la pornire și la revenire, aplicația citește `APP_VER` de pe GitHub (`app.js?nocache`, `no-store`) și arată bara „E o versiune nouă: vX · ⟳ Actualizează”; (4) **Setări → Actualizare**: versiunea din telefon și de pe GitHub, „⟳ Actualizează forțat” = scoate service worker-ul, șterge copiile codului (nu datele, nici `animas-lib-1`), descarcă din nou fișierele cu `cache:'reload'`, repornește (`?v=` scos din adresă după pornire). Clipurile în lucru continuă la Runware și se reiau după repornire.
+- Test: `teste/test-update-191.py` (10, cu service worker-ul pornit și `max-age=600` ca pe GitHub).
+
 ## 1.9.0 — 🎞 Montaj AI (AI Video Continuity)
 **Unde:** Galerie → „🎞 Montaj AI” (sau Selectează 2–10 clipuri → „🎞 Montaj (n)”). Ecran nou `v-montaj` (`go('montaj')`); meniul de jos rămâne pe Galerie.
 **Fluxul:** alegi 2–10 clipuri (din galerie și/sau din telefon, „+ Din telefon”) → „🧠 Analizează” → ordinea propusă, cu scorul fiecărei îmbinări și motivul → o schimbi dacă vrei (⬆⬇, tăieturile la început/final, tăietură directă sau fondu 0,4 s) → „▶ Previzualizează” (clipurile pe rând, cu tăieturile, fără codare) → „🎬 Generează videoclipul final” → MP4 în galerie („Montaj AI · n clipuri”, `mk:'Montaj AI'`, `montaj:{from, names, trims, trans, w, h, fps, size, overall}`). „Anulează” oprește analiza sau exportul oricând; nimic nu se salvează pe jumătate.
@@ -70,7 +75,7 @@ MoveNet Lightning rulează în telefon prin TensorFlow.js din face-api (`faceapi
 **Claude:** o singură cerere: pentru fiecare clip 3 cadre de 384 px (început, mijloc, final) + metadatele + măsurătorile → JSON (`clips`, `pairs` pentru toate perechile, `order`, `trims`, `incompatible`, `confidence`, `enough`, `warnings`). Validare strictă: doar `c1…cN`, numere finite 0–1, tăieturi ≥ 0 și ≤ 40% din clip cu ≥ 0,5 s rămase, ordinea doar dacă e o permutare; restul ignorat, cu avertisment. Eroare / fără JSON / fără cheie → avertisment și ordinea doar din măsurători. Scorurile sunt estimări interne: 90–100% foarte bună, 75–89% bună, 50–74% incertă, sub 50% de verificat manual.
 **Lipirea (videoMerger, FFmpeg.wasm):** formatul montajului = raportul cel mai des întâlnit; rezoluția = cea mai mare din el, fără mărire, latura scurtă ≤ 1080 (sau 720 la alegere, sau automat pe telefoanele cu ≤ 2 GB); fps comun sau 30 dacă diferă. Fiecare clip, pe rând: tăiere exactă la cadre întregi → scalare fără deformare (margini negre doar dacă formatele diferă și alegi „păstrează tot”; altfel „umple ecranul”) → fps → sunetul lui sau liniște (dacă alt clip are sunet) → H.264 (CRF 20, veryfast) + AAC 128k. Apoi: doar tăieturi → lipire fără recodare (concat); cu fondu → `xfade` + `acrossfade` (aceeași bază de timp pe toate intrările). Fără interpolare, încetinire, stabilizare sau alte efecte. Verificarea: decodare completă fără erori, durata așteptată (±0,6 s), antet `ftyp`, apoi redarea în telefon. Limite: un clip > 450 MB sau totalul > 1,6 GB → refuzat cu propunere; „Aborted(OOM)” / memorie → mesaj clar, FFmpeg repornit.
 **Offline:** FFmpeg (~32 MB) se descarcă la primul export și rămâne în copia telefonului (`animas-lib-1`, care nu se mai șterge la versiunile noi); după aceea, montajul merge fără rețea (Claude nu: atunci ordinea e doar din măsurători).
-**Service worker:** `animas-v16`; `vendor/` vine întâi din copie, într-un cache separat `animas-lib-1`.
+**Service worker:** `animas-v16` (1.9.1: `animas-v17`); `vendor/` vine întâi din copie, într-un cache separat `animas-lib-1`.
 
 ## 1.8.1
 - Vizualizatorul clipului permite redenumirea, selectarea personajului, locului și rolului și atribuirea directă în setul pentru apel.
@@ -141,6 +146,7 @@ Rulare: `python3 test-animas-100.py <dosarul animas>` (lângă el: `fata.jpg`, `
 ## Istoric
 | Versiune | Data | Ce |
 | --- | --- | --- |
+| 1.9.1 | 21.11.2026 | actualizarea sigură: service worker cu revalidare, `?v=` la scripturi, bara „versiune nouă”, „⟳ Actualizează forțat” în Setări |
 | 1.9.0 | 21.11.2026 | 🎞 Montaj AI: 2–10 clipuri → analiză (telefon + Claude) → ordinea optimă, tăieturi, tranziții → MP4 local cu FFmpeg.wasm, în galerie; `vendor/` într-o copie care rămâne între versiuni |
 | 1.8.1 | 21.11.2026 | redenumire și atribuire directă a clipurilor din vizualizator către personaj, loc și rol; bază pentru imaginea de apel din cadrul de start |
 | 1.8.0 | 21.11.2026 | biblioteca pentru apel extinsă la 30 de roluri; metadate de tranziție; cache PWA nou; compatibilitate cu Taifas 14.9 |

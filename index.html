@@ -42,6 +42,7 @@ label.chk input{width:auto;margin-top:3px}
 .mjmid{flex:1;min-width:0;font-size:14px}.mjbtn{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-width:38%}.mjtrim{font-size:13px;margin-top:6px}.mjtrim input{width:64px;padding:4px 6px;display:inline-block}
 .mjt{font-size:13px;margin:2px 0 2px 64px;padding:6px 10px;border-left:3px solid var(--line);border-radius:4px;background:rgba(255,255,255,.03)}.mjt select{width:auto;display:inline-block;padding:2px 6px;font-size:12px;margin-left:6px}.mjt.vb,.mjsum.vb{border-color:var(--ok)}.mjt.b,.mjsum.b{border-color:#8fbf6a}.mjt.inc,.mjsum.inc{border-color:var(--warn)}.mjt.man,.mjsum.man{border-color:var(--bad)}
 .mjsum{margin:10px 0;padding:10px;border-left:4px solid var(--line);border-radius:6px;background:rgba(255,255,255,.04);font-size:14px}.mjsum ul{margin:6px 0 4px 18px;padding:0;font-size:13px}.mjprog{margin:10px 0;font-size:13px}.mjprog .bar{height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;margin-bottom:6px}.mjprog .bar i{display:block;height:100%;background:var(--acc);transition:width .3s}.btn.off{opacity:.45;pointer-events:none}.mjpick input{width:auto;flex:none;align-self:center}
+#updBar{position:fixed;left:12px;right:12px;top:10px;z-index:60;display:flex;gap:8px;align-items:center;padding:10px 12px;border-radius:12px;background:#2a1a12;border:1px solid var(--acc);box-shadow:0 6px 24px rgba(0,0,0,.4);font-size:14px}#updBar[hidden]{display:none}#updBar span{flex:1}
 .muted{color:var(--mut);font-size:13px}.ok{color:var(--ok)}.warn{color:var(--warn)}.errtxt{color:var(--bad);font-size:13px;margin-top:4px}.bad{color:var(--bad)}
 ol.steps{margin:6px 0 4px;padding-left:22px;font-size:14px}ol.steps li{margin:3px 0}.sec{color:var(--acc2);font-variant-numeric:tabular-nums;font-size:13px}
 #pSteps .warn{font-size:13px;margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -184,6 +185,9 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
       <label class="chk"><input type="checkbox" id="sEnd" onchange="setFlag('endFrame', this.checked)"> Ancorează cadrul final (FLUX.2 klein 9B face ultima imagine cu același corp; ~0,4–1 cent pe clip; Kling 4.0, Veo 3.1, Seedance 2.5, schița)</label>
       <label class="chk"><input type="checkbox" id="sSteps" onchange="setFlag('checkSteps', this.checked)"> Verifică pașii în clip (Claude vede 8 cadre, ~1–2 cenți pe clip)</label>
     </section>
+    <section class="box"><h3>Actualizare</h3><p id="sUpd" class="muted"></p>
+      <div class="row wrap"><button class="sm" onclick="forceUpdate()">⟳ Actualizează forțat</button><button class="sm ghost" onclick="checkUpdate(true)">Verifică</button></div>
+      <p class="muted">Ia din nou toate fișierele aplicației de pe GitHub, ocolind copiile din telefon, și repornește. Datele (clipuri, personaje, setări, chei) rămân.</p></section>
     <section class="box"><h3>Costuri</h3><div id="sCosts"></div><p class="muted" id="sStore"></p></section>
   </div>
 </main>
@@ -194,19 +198,21 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
   <button data-v="setari" onclick="go('setari')"><b>⚙</b>Setări</button>
 </nav>
 <div id="sheetBg" hidden onclick="if(event.target === this) closeSheet()"><div id="sheet"></div></div>
+<div id="updBar" hidden><span>E o versiune nouă: v<b></b></span><button class="sm" onclick="forceUpdate()">⟳ Actualizează</button><button class="sm ghost" onclick="this.parentNode.hidden = true" aria-label="Închide">✕</button></div>
 <div id="toast"></div>
-<script src="prompt.js"></script>
-<script src="runware.js"></script>
-<script src="claude.js"></script>
-<script src="face.js"></script>
-<script src="body.js"></script>
-<script src="post.js"></script>
-<script src="story.js"></script>
-<script src="callset.js"></script>
-<script src="videoMerger.js"></script>
-<script src="videoAnalyzer.js"></script>
-<script src="continuityEngine.js"></script>
-<script src="montaj.js"></script>
-<script src="app.js"></script>
+<!-- 1.9.1: ?v=<versiunea> la fiecare script: la o versiune nouă telefonul cere fișierele noi, nu copia veche (se schimbă odată cu APP_VER) -->
+<script src="prompt.js?v=1.9.1"></script>
+<script src="runware.js?v=1.9.1"></script>
+<script src="claude.js?v=1.9.1"></script>
+<script src="face.js?v=1.9.1"></script>
+<script src="body.js?v=1.9.1"></script>
+<script src="post.js?v=1.9.1"></script>
+<script src="story.js?v=1.9.1"></script>
+<script src="callset.js?v=1.9.1"></script>
+<script src="videoMerger.js?v=1.9.1"></script>
+<script src="videoAnalyzer.js?v=1.9.1"></script>
+<script src="continuityEngine.js?v=1.9.1"></script>
+<script src="montaj.js?v=1.9.1"></script>
+<script src="app.js?v=1.9.1"></script>
 </body>
 </html>
