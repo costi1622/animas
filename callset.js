@@ -120,22 +120,22 @@ function csConfigure(role){
   const c=charById(C.charId), s=c && csGet(c.id,CS.place,true);
   if(!s || !s.frame) return toast('Pune întâi imaginea de apel.');
   const cfg=csRoleConfig(s,role); CS.customRole=role;
-  const box=document.createElement('div'); box.className='sheet'; box.id='csConfigSheet';
-  box.innerHTML=`<div class="box"><h3>🎬 Call Studio · ${esc(csRoleName(role))}</h3>
+  const html=`<div class="box"><h3>🎬 Call Studio · ${esc(csRoleName(role))}</h3>
     <p class="muted">Pregătește un clip reutilizabil pentru apeluri libere sau notează o replică pentru producția audio ulterioară.</p>
     <label>Tip de clip<select id="csMode"><option value="reusable" ${cfg.mode!=='scripted'?'selected':''}>Reutilizabil · fără replică fixă</option><option value="scripted" ${cfg.mode==='scripted'?'selected':''}>Replică fixă · pregătire scenariu (fără audio automat)</option></select></label>
     <label>Indicații pentru mișcare<textarea id="csDirection" rows="3" maxlength="700" placeholder="Ex.: zâmbet cald, mișcări lente">${esc(cfg.direction||'')}</textarea></label>
     <label>Replica exactă (doar pentru modul cu scenariu)<textarea id="csDialogue" rows="3" maxlength="500" placeholder="Hello, sweetheart...">${esc(cfg.dialogue||'')}</textarea></label>
     <p class="warn">Important: această etapă generează video-ul și salvează scenariul, dar NU produce încă voce sau lip-sync. Taifas va continua să genereze răspunsurile live.</p>
     <div class="row wrap"><button id="csConfigGo">Salvează și generează</button><button id="csConfigCancel" class="ghost">Anulează</button></div></div>`;
-  document.body.appendChild(box);
-  const close=()=>{box.remove();CS.customRole=null;};
+  sheet(html);
+  const box=document.getElementById('sheet');
+  const close=()=>{closeSheet();CS.customRole=null;};
   box.querySelector('#csConfigCancel').onclick=close;
   box.querySelector('#csConfigGo').onclick=async()=>{
     const mode=box.querySelector('#csMode').value, direction=box.querySelector('#csDirection').value.trim(), dialogue=box.querySelector('#csDialogue').value.trim();
     if(mode==='scripted' && !dialogue) return toast('Scrie replica exactă pentru acest mod.');
     s.roleConfig=s.roleConfig||{};s.roleConfig[role]={mode, direction, dialogue:mode==='scripted'?dialogue:''};
-    await csTouch(s);close();await csMake([role]);
+    try { await csTouch(s); close(); await csMake([role]); } catch(e) { console.error('Call Studio:',e); toast('Nu pot genera clipul: '+(e.message||e),6000); }
   };
 }
 // un clip pentru rol, făcut din imaginea de apel (primul și ultimul cadru = imaginea; „la revedere” doar primul)
