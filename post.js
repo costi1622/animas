@@ -61,6 +61,11 @@ async function postTask(job){
   }
   if(job.kind === 'upscale') return upscaleTask(src, job.opts.res, job.opts.fps, job.opts.turbo);
   if(job.kind === 'lipsync'){
+    if(!job.audioUrl && job.opts.reuseAudioUrl){
+      job.audioUrl = job.opts.reuseAudioUrl;
+      job.ttsCost = 0;
+      await saveJobs();
+    }
     if(!job.audioUrl){
       job.state = 'voce'; updJob(job);
       const t = ttsTask(job.opts.text, job.opts.voice || (c && c.ttsVoice), job.opts.style || (c && c.ttsStyle)); await rwSend(t);
@@ -108,3 +113,25 @@ function upCost(id){
   $('#puGo').disabled = !ok;
 }
 function lsCost(id){ const x = clips.find(c => c.id === id), n = ($('#plText').value || '').length; $('#plCost').innerHTML = `Cost estimat: <b>${usdC(costLipsync(x, n))}</b> (buze ${usdC(POST.lipsync.usd * Math.ceil(x.sec))} + voce ≈ ${usdC(POST.tts.usdChar * n)}; costul real apare după)`; }
+
+/* 1.9.6: relansare lip-sync cu exact același audio și video sursă.
+   Nu pretinde aliniere fonemică: modelul extern decide mișcarea gurii.
+   Refolosim audio-ul deja generat pentru a evita costul și variația TTS. */
+function lipRetrySheet(id){
+  const voiced = clips.find(c => c.id === id);
+  if(!voiced || voiced.kind !== 'lipsync' || !voiced.lipAudioUrl || !voiced.parent)
+    return toast('Acest clip nu are audio reutilizabil. Funcția este disponibilă pentru clipurile noi din 1.9.6.', 6500);
+  const original = clips.find(c => c.id === voiced.parent);
+  if(!original || !clipSrc(original)) return toast('Videoclipul original nu mai este disponibil.', 6000);
+  const estimated = POST.lipsync.usd * Math.ceil(original.sec || 5);
+  sheet(`<h2>🎙 Re-sincronizează buzele</h2>
+    <p class="muted">Folosește exact aceeași voce și videoclipul original. Nu regenerează vocea, nu suprascrie clipurile existente. O nouă încercare poate îmbunătăți sincronizarea, dar nu garantează potrivirea fiecărui cuvânt.</p>
+    <p class="muted">Cost estimat suplimentar: <b>${usdC(estimated)}</b> (numai lip-sync). Compară apoi cele două versiuni în galerie.</p>
+    <button id="lipRetryGo">Încearcă din nou · ${usdC(estimated)}</button>`);
+  const button = document.getElementById('lipRetryGo');
+  if(button) button.onclick=()=>postJob('lipsync', original, {
+    text:voiced.lipText, reuseAudioUrl:voiced.lipAudioUrl,
+    voice:voiced.lipVoice||'Gacrux', style:voiced.lipStyle||'warm',
+    callSet:voiced.callStudio ? {...voiced.callStudio} : null
+  });
+}

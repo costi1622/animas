@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.9.5';
+const APP_VER = '1.9.6';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -495,7 +495,10 @@ async function finishPost(job, x, vb, vid, rw, cost){
   if(job.kind === 'replace' && frames.length){ const c = charById(job.charId); if(c) try{ score = await clipScore(c, frames); }catch(e){} try{ body = await bodyScore(await DB.get(src.start), frames); }catch(e){} }
   const tag = {replace:'fața reparată', upscale:`mărit ${job.opts.res}${job.opts.fps ? ' · ' + job.opts.fps + ' fps' : ''}`, lipsync:'cu voce'}[job.kind];
   const clip = {...src, id:uid(), at:Date.now(), parent:src.id || null, kind:job.kind, tag, vid, th, rw, cost:cost + (job.ttsCost || 0), costReal:+x.cost > 0, score, body,
-    res:job.kind === 'upscale' ? job.opts.res : job.kind === 'replace' ? job.opts.res : src.res, lipText:job.kind === 'lipsync' ? job.opts.text : src.lipText || '', group:null, alt:false};
+    res:job.kind === 'upscale' ? job.opts.res : job.kind === 'replace' ? job.opts.res : src.res, lipText:job.kind === 'lipsync' ? job.opts.text : src.lipText || '',
+    lipAudioUrl:job.kind === 'lipsync' ? job.audioUrl : null,
+    lipVoice:job.kind === 'lipsync' ? job.opts.voice : null,
+    lipStyle:job.kind === 'lipsync' ? job.opts.style : null, group:null, alt:false};
   if(job.callSet && job.kind==='lipsync'){
     clip.callStudio={mode:'scripted',dialogue:job.callSet.dialogue,voice:job.callSet.voice,style:job.callSet.style,role:job.callSet.role};
   }
@@ -614,6 +617,7 @@ async function openClip(id){
       <button class="sm ghost" onclick="postSheet('${x.id}', 'replace')" ${clipSrc(x) ? '' : 'disabled'}>🙂 Repară fața</button>
       <button class="sm ghost" onclick="postSheet('${x.id}', 'upscale')" ${clipSrc(x) ? '' : 'disabled'}>⬆ Mărește</button>
       <button class="sm ghost" onclick="postSheet('${x.id}', 'lipsync')" ${clipSrc(x) ? '' : 'disabled'}>🗣 Voce</button>
+      ${x.kind === 'lipsync' && x.lipAudioUrl && x.parent ? `<button class="sm ghost" onclick="lipRetrySheet('${x.id}')">↻ Re-sincronizează (aceeași voce)</button>` : ''}
       ${clipSrc(x) ? '' : '<span class="muted">prelucrările merg pe clipurile făcute din 1.6</span>'}
     </div>
     <div class="info"><b>${esc(x.label || (x.text || 'Clip fără nume').slice(0, 58))}</b> · ${esc(c ? c.name : 'Fără personaj')} · ${x.draft ? 'schiță' : 'final'} · ${esc(m.nume)} ${x.res} · ${x.sec} s${x.audio ? ' · cu sunet' : ''} · ${usdC(x.cost)}${x.costReal ? '' : ' (estimat)'}
