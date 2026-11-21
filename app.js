@@ -125,46 +125,7 @@ async function boot(){
   setTimeout(() => checkAges().catch(() => {}), 1500);
   for(const st of stories) if(st.state === 'lucru') setTimeout(() => storyNext(st.id), 2000);   // 1.6: poveștile în lucru continuă
   setMode(S.mode || 'clip');
-  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', {updateViaCache:'none'}).then(r => { document.addEventListener('visibilitychange', () => { if(!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});
-  if(/[?&]v=\d/.test(location.search)) history.replaceState(null, '', location.pathname + location.hash);   // după actualizarea forțată
-  setTimeout(() => checkUpdate().catch(() => {}), 3000);
-  document.addEventListener('visibilitychange', () => { if(!document.hidden) checkUpdate().catch(() => {}); });
-}
-/* ═════════ 1.9.1: actualizarea ═════════
-   Cauza versiunilor vechi: GitHub Pages trimite fișierele cu „păstrează 10 minute” (HTTP cache), iar service worker-ul vechi le servea din
-   copie; uneori telefonul rămânea pe codul vechi și după ce urcai versiunea nouă. Acum: (1) service worker-ul cere codul cu revalidare
-   (no-cache) și e verificat la fiecare revenire în aplicație; (2) la pornire și la revenire, aplicația compară versiunea ei cu cea de pe
-   GitHub și arată o bară „E versiunea nouă X”; (3) „⟳ Actualizează forțat” (Setări și bara): scoate service worker-ul, șterge copiile
-   codului (NU datele: clipurile, personajele, setările, cheile rămân; nici bibliotecile mari, ca FFmpeg), descarcă din nou fișierele
-   ocolind orice copie și repornește aplicația. */
-async function serverVer(){
-  const r = await fetch('app.js?nocache=' + Date.now(), {cache:'no-store'}); if(!r.ok) throw new Error('HTTP ' + r.status);
-  const m = (await r.text()).match(/const APP_VER = '([^']+)'/); return m ? m[1] : null;
-}
-const verNewer = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for(let i = 0; i < Math.max(x.length, y.length); i++){ if((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
-let UPD = {server:null, at:0};
-async function checkUpdate(force){
-  if(!navigator.onLine || (!force && Date.now() - UPD.at < 60e3)) return UPD.server;
-  UPD.at = Date.now(); UPD.server = await serverVer();
-  const bar = $('#updBar');
-  if(bar){ const nw = UPD.server && verNewer(UPD.server, APP_VER); bar.hidden = !nw; if(nw) bar.querySelector('b').textContent = UPD.server; }
-  renderUpd(); return UPD.server;
-}
-function renderUpd(){
-  const el = $('#sUpd'); if(!el) return;
-  el.innerHTML = `În telefon: <b>v${APP_VER}</b> · pe GitHub: <b>${UPD.server ? 'v' + UPD.server : navigator.onLine ? 'verific…' : 'fără rețea'}</b>${UPD.server ? (verNewer(UPD.server, APP_VER) ? ' — <span class="warn">e o versiune nouă</span>' : UPD.server === APP_VER ? ' — <span class="ok">ești la zi</span>' : '') : ''}`;
-}
-async function forceUpdate(){
-  if(typeof MJ !== 'undefined' && MJ.busy) return toast('Așteaptă să se termine montajul (sau anulează-l).');
-  if(!navigator.onLine) return toast('Fără rețea: actualizarea are nevoie de internet.');
-  const live = jobs.filter(j => j.state !== 'eroare').length;
-  if(!window.__noConfirm && !confirm(`Actualizez forțat: iau din nou toate fișierele aplicației de pe GitHub și repornesc.\nClipurile, personajele, setările și cheile rămân.${live ? `\n${live} ${live === 1 ? 'clip în lucru continuă' : 'clipuri în lucru continuă'} la Runware și ${live === 1 ? 'se reia' : 'se reiau'} după repornire.` : ''}\nContinui?`)) return;
-  toast('Actualizez…', 8000);
-  const files = ['./', 'index.html', 'sw.js', 'manifest.webmanifest', ...[...document.scripts].map(s => s.getAttribute('src')).filter(s => s && !/^https?:/.test(s))];
-  try{ if('serviceWorker' in navigator) for(const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); }catch(e){}
-  try{ for(const k of await caches.keys()) if(k.startsWith('animas-') && !k.startsWith('animas-lib')) await caches.delete(k); }catch(e){}
-  await Promise.all(files.map(f => fetch(f, {cache:'reload'}).catch(() => null)));   // copia HTTP a browserului primește versiunea nouă
-  location.replace(location.pathname + '?v=' + Date.now() + location.hash);
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 function go(v){
   if(!['creeaza', 'galerie', 'personaje', 'setari', 'montaj'].includes(v)) v = 'creeaza';   // 1.9.0: + 🎞 Montaj AI (din Galerie)
@@ -820,7 +781,6 @@ async function taifasImport(){
 
 /* ═════════ Setări ═════════ */
 function renderSettings(){
-  renderUpd(); checkUpdate(true).catch(() => { UPD.server = null; renderUpd(); });
   $('#sCl').value = S.clKey || ''; $('#sRw').value = S.rwKey || '';
   $('#sUseCl').checked = S.useClaude === 'on'; $('#sFace').checked = S.checkFace === 'on'; $('#sSteps').checked = S.checkSteps !== 'off'; $('#sEnd').checked = S.endFrame !== 'off'; $('#sFix').checked = S.autoFix === 'on'; $('#sBest2').checked = S.best2 === 'on';
   const c = S.costs || {days:{}}, d = dayKey(), mo = d.slice(0, 7);
