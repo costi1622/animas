@@ -1,6 +1,6 @@
 # Animas — documentație
 
-Versiunea **1.7.1** (20 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
+Versiunea **1.8.1** (21 noiembrie 2026). Aplicație personală (PWA, JavaScript simplu): o poză + ce vrei să facă personajul → clip video realist.
 Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · publicare: arhiva ZIP urcată în rădăcina repo-ului, workflow-ul `publica.yml` o dezarhivează și o publică pe GitHub Pages.
 
 ## Principii
@@ -20,7 +20,7 @@ Adresa: https://costi1622.github.io/animas/ · repo `costi1622/animas` · public
 | `prompt.js` | 1.2: asamblarea promptului video pe strategia fiecărui model, limita de 2.000 de caractere, compactarea fără pierderi de pași |
 | `body.js` | 1.4: corpul cu MoveNet Lightning (17 puncte), încadrarea, ce se vede din corp, proporțiile în clip |
 | `post.js` | 1.6: reparatul feței (P-Video-Replace), mărirea și fluidizarea (P-Video-Upscale), vocea (ElevenLabs v3, română) + buzele (sync lipsync-2) |
-| `callset.js` | 1.7: setul pentru apel (imaginea de apel + clipuri pe roluri, verificate pentru apel), citit de Taifas 14.7 |
+| `callset.js` | 1.8: biblioteca pentru apel extinsă la 30 de roluri, cu ID-urile primelor 8 păstrate pentru compatibilitate cu Taifas 14.9 |
 | `story.js` | 1.6: povești lungi din mai multe scene, redarea continuă, salvarea într-un singur fișier; alegerea automată a modelului |
 | `face.js` | face-api (fața + 68 de puncte + vârsta) și ArcFace (amprenta de 512 numere) |
 | `sw.js`, `manifest.webmanifest`, `icon*` | instalare ca aplicație, funcționare fără rețea pentru ecrane |
@@ -56,6 +56,18 @@ MoveNet Lightning rulează în telefon prin TensorFlow.js din face-api (`faceapi
 - **Ce se vede** în cadrul final (tot corpul / cap–genunchi / cap–șolduri / cap și umeri) apare sub poză și merge la Claude și în prompt: „Framing: …; păstrează încadrarea, nu inventa părți ale corpului din afara cadrului”.
 - **Semnele distinctive** (alunițe, pistrui, tatuaje, ochelari, bijuterii, machiaj) intră în descrierea „ce se vede” și în regula de identitate.
 - **Proporțiile în clip:** rapoarte care nu depind de distanță (umeri/trunchi, șolduri/umeri, braț/antebraț, coapsă/gambă), comparate cu poza de start pe cele 8 cadre; mediana abaterilor → procent (5% → 90, 10% → 80 = pragul, 15% → 70). Aproximativ: unghiul și poziția schimbă măsurătorile; nu măsoară forme de sub haine.
+
+## 1.8.1
+- Vizualizatorul clipului permite redenumirea, selectarea personajului, locului și rolului și atribuirea directă în setul pentru apel.
+- Dacă setul nu are încă imagine de apel, se folosește cadrul de start al clipului.
+
+## 1.8.0 — bibliotecă extinsă pentru apeluri (30 roluri)
+- Setul pentru apel are 30 de roluri standard. Primele 8 păstrează ID-urile vechi (`vorb`, `asc`, `activ`, `vorb2`, `gand`, `ras`, `priv`, `bye`), deci seturile existente rămân compatibile.
+- Rolurile suplimentare acoperă zâmbet, aprobare, curiozitate, surpriză, empatie, privire în direcții diferite, aranjarea părului, băut, verificarea telefonului, întindere și schimbarea poziției.
+- Contractul `callsets` păstrează `clips:{rol:idClip}` și adaugă `roles:{rol:{group,loop,transition}}`; Taifas 14.9 citește și seturile vechi fără acest câmp.
+- Clipurile de acțiune se termină revenind la poziția neutră; rolurile de conversație rămân bucle.
+- „Fă ce lipsește” generează rolurile lipsă, iar costul estimat este afișat înainte de lansare. Fiecare clip este verificat individual înainte de importul în Taifas.
+- Test dedicat: `teste/test-callset-180.js`.
 
 ## 1.7.1 — „Alege” din toată galeria
 - Bug 1.7: „Alege” / „Din clipurile mele” arătau doar clipurile înregistrate pe personajul selectat; cele făcute cu „Fără personaj” sau cu o copie mai veche a personajului nu apăreau („nu ai încă clipuri”). Acum: toată galeria (întâi cele cu personajul, apoi restul, cu eticheta lor), atingi miniatura → clipul rulează sus.
@@ -107,12 +119,14 @@ Fișierul se citește imediat și se aduce la JPEG (≤ 2.400 px); dacă nu se p
 Taifas și Animas sunt pe aceeași adresă (`costi1622.github.io`), deci în același Chrome văd aceeași memorie a telefonului. Animas **doar citește** baza `taifas2` (personajele, pozele, cheile); dacă Taifas nu există în acel browser, deschiderea e anulată ca să nu creeze o bază goală care l-ar strica. Se copiază: numele, poza de profil, portretul de aproape (`closeRef`), poza întreagă (`photoFull`), descrierea fizică (`physEn`), și al doilea personaj din duo-uri. Reimportul actualizează, nu dublează. Cheile se preiau doar dacă sunt în telefon (nu din seiful Worker).
 
 ## Teste
-`test-animas-100.py` (Playwright, Claude și Runware simulate): 216 verificări în browser + `test-prompt-120.js` (Node, 43 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
+`test-animas-100.py` (Playwright, Claude și Runware simulate): 216 verificări în browser + `test-viewer-181.py` (8 verificări pentru redenumirea/atribuirea clipurilor) + `test-prompt-120.js` (Node, 43 de verificări: fiecare model separat, limita, compactarea) — import, decupare, scor, prețuri, câmpurile cerute de fiecare model, schiță → final, reluarea după repornire, personaj nou, vârsta, galerie, chei.
 Rulare: `python3 test-animas-100.py <dosarul animas>` (lângă el: `fata.jpg`, `corp.jpg`, `clip.webm`).
 
 ## Istoric
 | Versiune | Data | Ce |
 | --- | --- | --- |
+| 1.8.1 | 21.11.2026 | redenumire și atribuire directă a clipurilor din vizualizator către personaj, loc și rol; bază pentru imaginea de apel din cadrul de start |
+| 1.8.0 | 21.11.2026 | biblioteca pentru apel extinsă la 30 de roluri; metadate de tranziție; cache PWA nou; compatibilitate cu Taifas 14.9 |
 | 1.7.1 | 20.11.2026 | „Alege” din toată galeria, cu previzualizare; fața măsurată la verificarea pentru apel |
 | 1.7 | 20.11.2026 | 📞 setul pentru apel: imaginea de apel, 8 roluri, verificarea pentru apel, preluat de Taifas 14.7 |
 | 1.6 | 20.11.2026 | povești lungi; cel mai bun din 2; reparatul feței; mărire și fluidizare; voce în română + buze; alegerea automată a modelului; fișa completă a personajului |

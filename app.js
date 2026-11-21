@@ -1,8 +1,8 @@
-/* Animas 1.8.0 — poză + ce vrei să facă personajul → clip video realist.
+/* Animas 1.8.1 — poză + ce vrei să facă personajul → clip video realist.
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.8.0';
+const APP_VER = '1.8.1';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -524,7 +524,7 @@ function clipCard(x){
   const c = charById(x.charId), m = MODELE[x.mk] || {nume:x.mk}, s = x.score;
   const pick = G.sel && !$('#v-galerie').hidden;
   return `<div class="card ${pick && G.sel.has(x.id) ? 'picked' : ''}" onclick="cardTap('${x.id}')"><div class="th aspect-${String(x.aspect || '9:16').replace(':', 'x')}"><img data-k="${x.th || x.start}" alt="">${pick ? `<span class="pick">${G.sel.has(x.id) ? '✓' : ''}</span>` : '<span class="play">▶</span>'}${x.draft ? '<span class="tag">schiță</span>' : ''}${x.tag ? `<span class="tag t2">${esc(x.tag)}</span>` : ''}${x.alt ? '<span class="tag t3">alternativă</span>' : x.best ? '<span class="tag t3 ok2">ales din 2</span>' : ''}</div>
-    <div class="meta"><b>${esc(c ? c.name : 'Fără personaj')}</b><span>${esc(m.nume)} · ${x.res} · ${x.sec} s · ${usdC(x.cost)}</span>${s && s.avg != null ? `<span class="${s.avg >= ID_OK ? 'ok' : 'warn'}">fața ${s.avg}% (min ${s.min}%)</span>` : ''}${x.body && x.body.avg != null ? `<span class="${x.body.avg >= BODY_OK ? 'ok' : 'warn'}">corpul ${x.body.avg}%</span>` : x.body && x.body.why ? '<span class="muted">corpul: nemăsurabil</span>' : ''}${x.check && x.check.n ? `<span class="${x.check.ok === x.check.n ? 'ok' : 'warn'}">pași ${x.check.ok}/${x.check.n}</span>` : ''}<span class="muted">${when(x.at)}</span></div></div>`;
+    <div class="meta"><b>${esc(x.label || (x.text || 'Clip fără nume').slice(0, 58))}</b><span>${esc(c ? c.name : 'Fără personaj')} · ${esc(m.nume)} · ${x.res} · ${x.sec} s · ${usdC(x.cost)}</span>${s && s.avg != null ? `<span class="${s.avg >= ID_OK ? 'ok' : 'warn'}">fața ${s.avg}% (min ${s.min}%)</span>` : ''}${x.body && x.body.avg != null ? `<span class="${x.body.avg >= BODY_OK ? 'ok' : 'warn'}">corpul ${x.body.avg}%</span>` : x.body && x.body.why ? '<span class="muted">corpul: nemăsurabil</span>' : ''}${x.check && x.check.n ? `<span class="${x.check.ok === x.check.n ? 'ok' : 'warn'}">pași ${x.check.ok}/${x.check.n}</span>` : ''}<span class="muted">${when(x.at)}</span></div></div>`;
 }
 // 1.4: selecția în galerie, pentru ștergere (una, mai multe, toate schițele)
 const G = {sel:null};
@@ -548,6 +548,15 @@ async function openClip(id){
   const c = charById(x.charId), m = MODELE[x.mk] || {nume:x.mk}, s = x.score, vb = await DB.get(x.vid);
   if(viewUrl) URL.revokeObjectURL(viewUrl); viewUrl = vb ? URL.createObjectURL(vb) : '';
   sheet(`<video src="${viewUrl}" controls autoplay loop playsinline class="player"></video>
+    <section class="box" style="margin:12px 0;padding:12px">
+      <h3>Organizează clipul</h3>
+      <label>Numele clipului<input id="clipLabel" maxlength="80" value="${esc(x.label || (x.text || '').slice(0, 58))}" placeholder="Ex.: Sharon – vorbește natural"></label>
+      <label>Personaj<select id="clipAssignChar"><option value="">Alege personajul</option>${chars.filter(q => !isYoung(q)).map(q => `<option value="${q.id}" ${q.id === x.charId ? 'selected' : ''}>${esc(q.name)}${q.srcId ? '' : ' · nu e importat din Taifas'}</option>`).join('')}</select></label>
+      <div class="grid2"><label>Locul din profil<select id="clipAssignPlace">${CS_PLACES.filter(q => q[0] !== 'toate').map(([k,n]) => `<option value="${k}" ${k === 'casa' ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+      <label>Rolul clipului<select id="clipAssignRole">${CS_ROLES.map(([k,n]) => `<option value="${k}" ${k === 'activ' ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label></div>
+      <button onclick="assignViewedClip('${x.id}')">Salvează și atribuie profilului</button>
+      <p class="muted">Dacă personajul este importat din Taifas, clipul verificat va fi preluat automat la următoarea deschidere a profilului.</p>
+    </section>
     <div class="row wrap acts">
       <button onclick="saveClip('${x.id}')">Salvează în telefon</button>
       ${x.draft ? `<button onclick="reuse('${x.id}', true)">Fă clipul final</button>` : ''}
@@ -562,7 +571,7 @@ async function openClip(id){
       <button class="sm ghost" onclick="postSheet('${x.id}', 'lipsync')" ${clipSrc(x) ? '' : 'disabled'}>🗣 Voce</button>
       ${clipSrc(x) ? '' : '<span class="muted">prelucrările merg pe clipurile făcute din 1.6</span>'}
     </div>
-    <div class="info"><b>${esc(c ? c.name : 'Fără personaj')}</b> · ${x.draft ? 'schiță' : 'final'} · ${esc(m.nume)} ${x.res} · ${x.sec} s${x.audio ? ' · cu sunet' : ''} · ${usdC(x.cost)}${x.costReal ? '' : ' (estimat)'}
+    <div class="info"><b>${esc(x.label || (x.text || 'Clip fără nume').slice(0, 58))}</b> · ${esc(c ? c.name : 'Fără personaj')} · ${x.draft ? 'schiță' : 'final'} · ${esc(m.nume)} ${x.res} · ${x.sec} s${x.audio ? ' · cu sunet' : ''} · ${usdC(x.cost)}${x.costReal ? '' : ' (estimat)'}
     ${s && s.avg != null ? `<div class="${s.avg >= ID_OK ? 'ok' : 'warn'}">Fața: ${s.avg}% în medie, cel mai slab cadru ${s.min}% (${s.seen} din ${s.n} cadre)${x.startScore != null ? ' · poza de start ' + x.startScore + '%' : ''}</div>` : s ? '<div class="muted">Fața nu se vede în cadrele verificate.</div>' : ''}
     ${x.lipText ? `<div class="muted">Spune: „${esc(x.lipText)}”</div>` : ''}
     ${bodyLine(x)}${x.end ? `<div class="muted">Cadru final ancorat${x.endScore && x.endScore.face != null ? ` (fața ${x.endScore.face}%${x.endScore.body != null ? ', corpul ' + x.endScore.body + '%' : ''})` : ''}.</div>` : ''}
@@ -570,6 +579,29 @@ async function openClip(id){
     <div class="muted">${when(x.at)}</div>
     <details><summary>Ce ai cerut</summary><p>${esc(x.text)}</p><p class="mono">${esc(x.prompt)}</p>${x.nota ? `<p class="muted">${esc(x.nota)}</p>` : ''}</details></div>
 `);
+}
+// 1.8.1: redenumire + atribuire directă din vizualizatorul clipului.
+async function assignViewedClip(id){
+  const x = clips.find(q => q.id === id); if(!x) return;
+  const name = ($('#clipLabel')?.value || '').trim();
+  const previousCharId = x.charId;
+  const charId = $('#clipAssignChar')?.value || '';
+  const place = $('#clipAssignPlace')?.value || 'casa';
+  const role = $('#clipAssignRole')?.value || 'activ';
+  if(!name) return toast('Dă-i un nume clipului.');
+  if(!charId) return toast('Alege personajul căruia îi atribui clipul.');
+  const c = charById(charId); if(!c) return toast('Personajul nu mai există.');
+  if(isYoung(c)) return toast(`Personajul pare sub ${AGE_MIN} de ani: nu se poate folosi pentru clipuri.`, 5000);
+  if(!x.vid || !await DB.get(x.vid).catch(() => null)) return toast('Fișierul video lipsește.');
+  const set = csGet(c.id, place, true), old = set.clips[role];
+  if(old && old !== x.id && !confirm(`Rolul „${csRoleName(role)}” are deja un clip. Îl înlocuiești?`)) return;
+  x.label = name; x.charId = c.id; await saveClips();
+  if(!set.frame){ const frameKey = previousCharId === c.id ? x.start : c.photo; const frame = frameKey && await DB.get(frameKey).catch(() => null); if(frame) set.frame = await putBlob('img', frame); }
+  await csTouch(set);
+  closeSheet();
+  await csAssign(set, role, x);
+  if(!c.srcId) toast('Clip atribuit în Animas. Pentru preluare în Taifas, importă personajul din Taifas și folosește acel profil.', 6500);
+  renderGallery();
 }
 // 1.5: corpul în clip, cu ce s-a măsurat și ce s-a sărit
 function bodyLine(x){

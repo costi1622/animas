@@ -1,4 +1,4 @@
-/* Animas 1.8.0 — 📞 setul pentru apel: o imagine de apel + clipuri pe roluri, pentru apelurile video din Taifas.
+/* Animas 1.8.1 — 📞 setul pentru apel: o imagine de apel + clipuri pe roluri, pentru apelurile video din Taifas.
    Taifas (aceeași adresă → aceeași bază a telefonului) citește singur `callsets` și clipurile verificate, le copiază la el și le
    folosește în apelurile video ale personajului (după id-ul din Taifas, păstrat la import în `c.srcId`), fără niciun cost în apel.
    Fiecare clip din set e verificat de Claude pe 4 cadre: adult, îmbrăcat cu haine de zi cu zi, mișcare obișnuită de apel video.
