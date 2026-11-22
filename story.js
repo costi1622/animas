@@ -228,6 +228,41 @@ function continuityStatus(st){
   return `<div class="muted"><b>Continuity Lock:</b> ${r.error?'Comparația nu a reușit: '+esc(r.error):'Diferență vizuală între cadre: '+r.delta+'% (metrică de pixeli, nu identitate).'} ${r.warning?'⚠ Posibil salt vizibil. Compară manual cele două clipuri.':'Diferență redusă; verifică totuși vizual.'}</div>`
     +(r.accepted?'<div class="ok">✓ Tranziție acceptată manual</div>':`<button class="sm ghost" onclick="continuityApprove('${st.id}')">✓ Am verificat și accept tranziția</button>`);
 }
+// 1.13: instrumente locale de inspecție, exclusiv din clipurile deja salvate.
+async function storyPreviewTransition(sid){
+  const st=storyById(sid);if(!st)return;
+  const cs=storyClips(st);if(cs.length<2)return toast('Ai nevoie de două scene finalizate.');
+  const a=cs[cs.length-2],b=cs[cs.length-1];
+  const blobs=await Promise.all([DB.get(a.vid),DB.get(b.vid)]);
+  if(blobs.some(x=>!(x instanceof Blob)||!x.size))return toast('Lipsește un videoclip salvat.');
+  const urls=blobs.map(x=>URL.createObjectURL(x));
+  const player=$('#stPlayer');if(player)player.pause();
+  const slot=$('#transitionPreview');if(!slot){urls.forEach(URL.revokeObjectURL);return;}
+  slot.innerHTML='<b>Previzualizare gratuită: ultimele 2 s → primele 2 s</b><div class="muted">Clipurile sunt redate local. Nu se face nicio cerere Runware.</div><video id="transitionVideo" controls playsinline class="player"></video><div class="row wrap"><button class="sm ghost" onclick="storyPreviewTransition(\''+sid+'\')">↻ Repetă tranziția</button></div>';
+  const v=$('#transitionVideo');let idx=0;
+  const cleanup=()=>urls.forEach(URL.revokeObjectURL);
+  // Păstrăm URL-urile până când se închide panoul; eliberăm la redeschidere.
+  window.__transitionPreviewUrls=window.__transitionPreviewUrls||[];
+  window.__transitionPreviewUrls.forEach(URL.revokeObjectURL);window.__transitionPreviewUrls=urls;
+  function playPart(i){idx=i;v.src=urls[i];v.onloadedmetadata=()=>{const target=i===0?Math.max(0,v.duration-2):0;if(target>0.02)v.currentTime=target;else v.play().catch(()=>{});};v.onseeked=()=>v.play().catch(()=>{});v.onended=()=>{if(i===0)playPart(1);};v.ontimeupdate=()=>{if(i===1&&v.currentTime>=2){v.pause();v.ontimeupdate=null;}};}
+  playPart(0);
+}
+async function storyCompareFrames(sid){
+  const st=storyById(sid);if(!st)return;
+  const cs=storyClips(st);if(cs.length<2)return toast('Ai nevoie de două scene finalizate.');
+  const slot=$('#transitionFrames');if(!slot)return;
+  slot.textContent='Extrag cadrele local…';
+  try{
+    const pair=cs.slice(-2),blobs=await Promise.all(pair.map(c=>DB.get(c.vid)));
+    const frames=await Promise.all([continuityFrame(blobs[0],true),continuityFrame(blobs[1],false)]);
+    const labels=['Final scenă precedentă','Început scenă următoare'];
+    slot.innerHTML='<div class="row wrap" style="align-items:flex-start">'+frames.map((pixels,i)=>{
+      const cv=document.createElement('canvas');cv.width=64;cv.height=64;
+      cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels),64,64),0,0);
+      return '<div style="flex:1;min-width:120px"><b>'+labels[i]+'</b><img style="display:block;width:100%;image-rendering:auto;border-radius:8px" alt="'+labels[i]+'" src="'+cv.toDataURL('image/png')+'"></div>';
+    }).join('')+'</div><div class="muted">Cadre reduse la 64×64 pentru comparația locală; nu sunt imagini HD.</div>';
+  }catch(e){slot.textContent='Comparația nu a reușit: '+e.message;}
+}
 function continuityNeedsApproval(st){
   if(!st.stepByStep)return false;
   const cs=storyClips(st);if(cs.length<2)return false;
@@ -250,6 +285,7 @@ async function openStory(sid){
   const st = storyById(sid); if(!st) return;
   const cs = storyClips(st);
   await continuityCheck(st);
+  (window.__transitionPreviewUrls||[]).forEach(u=>URL.revokeObjectURL(u));window.__transitionPreviewUrls=[];
   storyUrls.forEach(u => URL.revokeObjectURL(u)); storyUrls = [];
   for(const x of cs){ const b = await DB.get(x.vid); if(b) storyUrls.push(URL.createObjectURL(b)); }
   sheet(`<h2>${esc(st.title)}</h2>${storyUrls.length ? '<video id="stPlayer" controls autoplay playsinline class="player"></video>' : '<div class="empty">Nicio scenă gata încă.</div>'}
@@ -259,6 +295,7 @@ async function openStory(sid){
       <button class="ghost danger" onclick="storyDelete('${st.id}')">🗑 Șterge povestea</button>
     </div>
     ${continuityStatus(st)}
+    ${cs.length>=2 ? `<div class="row wrap"><button class="sm ghost" onclick="storyPreviewTransition('${st.id}')">▶ Previzualizează tranziția (gratuit)</button><button class="sm ghost" onclick="storyCompareFrames('${st.id}')">▣ Compară cadrele (gratuit)</button></div><div id="transitionPreview"></div><div id="transitionFrames"></div>` : ''}
     ${st.stepByStep ? `<div class="muted">Mod scenă cu scenă · ${cs.length}/${st.segs.length} finalizate. ${st.state === 'așteaptă' ? 'Verifică scena înainte să aprobi următoarea.' : ''}</div>` : ''}
     ${st.err ? `<div class="errtxt">${esc(st.err)}</div>` : ''}
     <ol class="steps">${st.segs.map((g, i) => { const x = g.clip && clips.find(c => c.id === g.clip); return `<li>${esc(g.ro)} <span class="sec">${g.sec} s · ${esc(MODELE[g.mk].nume)}</span> ${x ? `<a href="#" onclick="event.preventDefault(); openClip('${x.id}')">${x.score && x.score.avg != null ? 'fața ' + x.score.avg + '%' : 'scena'}${x.body && x.body.avg != null ? ' · corpul ' + x.body.avg + '%' : ''}</a>` : '<span class="muted">nefăcută</span>'}</li>`; }).join('')}</ol>`);
