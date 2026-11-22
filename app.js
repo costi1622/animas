@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.13.2';
+const APP_VER = '1.14';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -87,10 +87,38 @@ const saveChars = () => DB.set('chars', chars);
 const saveClips = () => DB.set('clips', clips);
 const saveJobs = () => DB.set('jobs', jobs);
 async function putBlob(prefix, b){ const k = prefix + ':' + uid(); await DB.set(k, b); return k; }
-function addCost(kind, v){
-  if(!(v > 0)) return; const c = S.costs || (S.costs = {days:{}, claude:0, runware:0}), d = dayKey();
-  c.days[d] = Math.round(((c.days[d] || 0) + v) * 1e6) / 1e6; c[kind] = Math.round(((c[kind] || 0) + v) * 1e6) / 1e6; saveS(); renderCostLine();
+function addCost(kind, v, detail = ''){
+  if(!(v > 0) || !Number.isFinite(+v)) return;
+  const c = S.costs || (S.costs = {days:{}, claude:0, runware:0}), d = dayKey();
+  c.days[d] = Math.round(((c.days[d] || 0) + v) * 1e6) / 1e6;
+  c[kind] = Math.round(((c[kind] || 0) + v) * 1e6) / 1e6;
+  // Jurnalul începe la 1.14. Totalurile anterioare rămân intacte.
+  const ledger = S.costLedger || (S.costLedger = []);
+  ledger.push({at:Date.now(), kind, usd:Math.round(v*1e6)/1e6, detail:String(detail||'Operațiune fără categorie detaliată').slice(0,100)});
+  if(ledger.length > 1500) ledger.splice(0,ledger.length-1500);
+  saveS(); renderCostLine();
 }
+function renderCostLedger(){
+  const el=$('#sCostLedger');if(!el)return;
+  const list=Array.isArray(S.costLedger)?S.costLedger:[];
+  const today=dayKey(),month=today.slice(0,7);
+  const total=rows=>rows.reduce((sum,x)=>sum+(+x.usd||0),0);
+  const todayRows=list.filter(x=>dayKey(x.at)===today);
+  const monthRows=list.filter(x=>dayKey(x.at).slice(0,7)===month);
+  el.innerHTML=`<p class="muted">Jurnal disponibil doar pentru operațiunile înregistrate începând cu v1.14. Nu reprezintă neapărat factura furnizorului.</p>`+
+    `<p>Înregistrări noi: <b>${list.length}</b> · Total jurnal: <b>${usdC(total(list))}</b></p>`+
+    `<p>Azi (jurnal): <b>${usdC(total(todayRows))}</b> · Luna aceasta (jurnal): <b>${usdC(total(monthRows))}</b></p>`+
+    `<div style="max-height:250px;overflow:auto">${list.slice(-60).reverse().map(x=>`<div class="muted" style="padding:6px 0;border-bottom:1px solid #444">${esc(new Date(x.at).toLocaleString('ro-RO'))} · ${esc(x.kind)} · <b>${usdC(x.usd)}</b> · ${esc(x.detail||'')}</div>`).join('')||'<p class="muted">Nicio cheltuială nouă.</p>'}</div>`+
+    `<button class="sm ghost" onclick="exportCostLedger()">↓ Exportă jurnal CSV</button>`;
+}
+function exportCostLedger(){
+  const list=Array.isArray(S.costLedger)?S.costLedger:[];
+  const q=x=>'"'+String(x??'').replace(/"/g,'""')+'"';
+  const csv='data,serviciu,cost_usd,detalii\r\n'+list.map(x=>[new Date(x.at).toISOString(),x.kind,x.usd,x.detail].map(q).join(',')).join('\r\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='animas-costuri-'+dayKey()+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+
 const charById = id => chars.find(c => c.id === id);
 /* 1.5: vârsta, ca în Taifas: un personaj sau o poză care pare sub 21 de ani nu se folosește pentru clipuri (estimarea din telefon,
    media pe poză și oglinda ei; la personaje, portretul și portretul de aproape). Se verifică la import, la pozele urcate sau generate
@@ -976,6 +1004,7 @@ function renderSettings(){
   $('#sUseCl').checked = S.useClaude === 'on'; $('#sFace').checked = S.checkFace === 'on'; $('#sSteps').checked = S.checkSteps !== 'off'; $('#sEnd').checked = S.endFrame !== 'off'; $('#sFix').checked = S.autoFix === 'on'; $('#sBest2').checked = S.best2 === 'on';
   const c = S.costs || {days:{}}, d = dayKey(), mo = d.slice(0, 7);
   const month = Object.entries(c.days || {}).filter(([k]) => k.startsWith(mo)).reduce((a, [, v]) => a + v, 0);
+  renderCostLedger();
   $('#sCosts').innerHTML = `Azi: <b>${usdC(c.days[d] || 0)}</b> · Luna aceasta: <b>${usdC(month)}</b><br>Total Runware: ${usdC(c.runware || 0)} · Total Claude: ${usdC(c.claude || 0)}`;
   if(navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then(e => { $('#sStore').textContent = `Spațiu folosit: ${(e.usage / 1048576).toFixed(0)} MB din ${(e.quota / 1048576 / 1024).toFixed(1)} GB disponibili`; }).catch(() => {});
 }
