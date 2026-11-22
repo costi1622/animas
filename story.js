@@ -172,10 +172,69 @@ function storyResume(sid){
     if(jobs.some(j => j.storyId === sid)) return toast('Există deja o scenă în lucru.');
     st.stepAllowance = 1;
   }
+  if(continuityNeedsApproval(st)) return toast('Verifică și acceptă tranziția înainte de următoarea scenă.',6000);
   st.state = 'lucru'; saveStories(); closeSheet(); storyNext(sid);
   toast(st.stepByStep ? 'Se generează doar scena următoare.' : 'Povestea continuă.');
 }
 const storyClips = st => st.segs.map(g => g.clip && clips.find(x => x.id === g.clip)).filter(Boolean);
+// 1.12.2: verificare locală, fără API, a saltului vizual la îmbinarea dintre două clipuri.
+// Scorul măsoară diferența de pixeli, NU identitatea facială și nu este un procent de asemănare.
+async function continuityFrame(blob, atEnd){
+  if(!(blob instanceof Blob) || !blob.size) throw new Error('Clip lipsă');
+  const url = URL.createObjectURL(blob), v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'auto';
+  const wait = (event, timeout=12000) => new Promise((resolve,reject)=>{
+    let t; const clean=()=>{clearTimeout(t);v.removeEventListener(event,ok);v.removeEventListener('error',bad);};
+    const ok=()=>{clean();resolve();},bad=()=>{clean();reject(new Error('Nu se poate decoda cadrul video'));};
+    v.addEventListener(event,ok,{once:true});v.addEventListener('error',bad,{once:true});
+    t=setTimeout(()=>{clean();reject(new Error('Timeout decodare video'));},timeout);
+  });
+  try{
+    const meta=wait('loadedmetadata');v.src=url;await meta;
+    if(!Number.isFinite(v.duration)||v.duration<=0||!v.videoWidth) throw new Error('Metadate video invalide');
+    const seek=wait('seeked');v.currentTime=atEnd?Math.max(0,v.duration-.15):Math.min(.12,v.duration/2);await seek;
+    const cv=document.createElement('canvas');cv.width=64;cv.height=64;
+    const ctx=cv.getContext('2d',{willReadFrequently:true});ctx.drawImage(v,0,0,64,64);
+    return ctx.getImageData(0,0,64,64).data;
+  }finally{URL.revokeObjectURL(url);try{v.pause();v.removeAttribute('src');v.load();}catch(e){}}
+}
+async function continuityCheck(st){
+  if(!st.stepByStep) return;
+  const cs=storyClips(st), i=cs.length-1;
+  if(i<1) return;
+  st.continuity=st.continuity||{};
+  const key=cs[i-1].id+'|'+cs[i].id;
+  if(st.continuity[key]) return;
+  try{
+    const [a,b]=await Promise.all([DB.get(cs[i-1].vid),DB.get(cs[i].vid)]);
+    const [x,y]=await Promise.all([continuityFrame(a,true),continuityFrame(b,false)]);
+    let sum=0;for(let k=0;k<x.length;k+=4)sum+=(Math.abs(x[k]-y[k])+Math.abs(x[k+1]-y[k+1])+Math.abs(x[k+2]-y[k+2]))/3;
+    const delta=Math.round(sum/(x.length/4)/255*100);
+    st.continuity[key]={delta, warning:delta>=18, accepted:false};
+  }catch(e){st.continuity[key]={delta:null,warning:true,accepted:false,error:e.message};}
+  await saveStories();
+}
+function continuityApprove(sid){
+  const st=storyById(sid);if(!st)return;
+  const cs=storyClips(st), key=cs.length>1?cs[cs.length-2].id+'|'+cs[cs.length-1].id:null;
+  if(key&&st.continuity&&st.continuity[key]){st.continuity[key].accepted=true;saveStories();}
+  openStory(sid);
+}
+function continuityStatus(st){
+  const cs=storyClips(st);if(!st.stepByStep||cs.length<2)return '';
+  const key=cs[cs.length-2].id+'|'+cs[cs.length-1].id;
+  const r=st.continuity&&st.continuity[key];
+  if(!r)return '<div class="muted">Verificarea continuității este în curs…</div>';
+  return `<div class="muted"><b>Continuity Lock:</b> ${r.error?'Comparația nu a reușit: '+esc(r.error):'Diferență vizuală între cadre: '+r.delta+'% (metrică de pixeli, nu identitate).'} ${r.warning?'⚠ Posibil salt vizibil. Compară manual cele două clipuri.':'Diferență redusă; verifică totuși vizual.'}</div>`
+    +(r.accepted?'<div class="ok">✓ Tranziție acceptată manual</div>':`<button class="sm ghost" onclick="continuityApprove('${st.id}')">✓ Am verificat și accept tranziția</button>`);
+}
+function continuityNeedsApproval(st){
+  if(!st.stepByStep)return false;
+  const cs=storyClips(st);if(cs.length<2)return false;
+  const key=cs[cs.length-2].id+'|'+cs[cs.length-1].id;
+  return !st.continuity||!st.continuity[key]||!st.continuity[key].accepted;
+}
+
 
 /* ───────── galerie: cardurile poveștilor și redarea continuă ───────── */
 function storyCards(){
@@ -190,6 +249,7 @@ let storyUrls = [];
 async function openStory(sid){
   const st = storyById(sid); if(!st) return;
   const cs = storyClips(st);
+  await continuityCheck(st);
   storyUrls.forEach(u => URL.revokeObjectURL(u)); storyUrls = [];
   for(const x of cs){ const b = await DB.get(x.vid); if(b) storyUrls.push(URL.createObjectURL(b)); }
   sheet(`<h2>${esc(st.title)}</h2>${storyUrls.length ? '<video id="stPlayer" controls autoplay playsinline class="player"></video>' : '<div class="empty">Nicio scenă gata încă.</div>'}
@@ -198,6 +258,7 @@ async function openStory(sid){
       ${st.state === 'gata' ? '' : st.state === 'lucru' ? `<button class="ghost" onclick="storyStop('${st.id}')">■ Oprește</button>` : `<button onclick="storyResume('${st.id}')">${st.stepByStep ? '▶ Scena următoare · ' + usdC((() => { const g = st.segs.find(x => !x.clip); return g ? costClip(g.mk, g.res, g.sec, MODELE[g.mk].audio === 'always' || (MODELE[g.mk].audio === 'switch' && st.audio), false).usd * (st.best2 ? 2 : 1) : 0; })()) : '▶ Continuă'}</button>`}
       <button class="ghost danger" onclick="storyDelete('${st.id}')">🗑 Șterge povestea</button>
     </div>
+    ${continuityStatus(st)}
     ${st.stepByStep ? `<div class="muted">Mod scenă cu scenă · ${cs.length}/${st.segs.length} finalizate. ${st.state === 'așteaptă' ? 'Verifică scena înainte să aprobi următoarea.' : ''}</div>` : ''}
     ${st.err ? `<div class="errtxt">${esc(st.err)}</div>` : ''}
     <ol class="steps">${st.segs.map((g, i) => { const x = g.clip && clips.find(c => c.id === g.clip); return `<li>${esc(g.ro)} <span class="sec">${g.sec} s · ${esc(MODELE[g.mk].nume)}</span> ${x ? `<a href="#" onclick="event.preventDefault(); openClip('${x.id}')">${x.score && x.score.avg != null ? 'fața ' + x.score.avg + '%' : 'scena'}${x.body && x.body.avg != null ? ' · corpul ' + x.body.avg + '%' : ''}</a>` : '<span class="muted">nefăcută</span>'}</li>`; }).join('')}</ol>`);
