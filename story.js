@@ -71,6 +71,8 @@ function renderStoryPlan(){
 }
 async function storyStart(stepByStep = false){
   const P = ST.plan; if(!P || !C.start) return;
+  const planned=(stepByStep?P.scenes.slice(0,1):P.scenes).reduce((sum,x)=>sum+(+x.cost||0),0)*(S.best2==='on'?2:1);
+  if(!approveEstimatedCost(stepByStep?'Prima scenă':'Poveste completă',planned,'Cadrele finale și verificările pot avea costuri suplimentare.'))return;
   if(isYoung(charById(C.charId))) return toast(`Personajul pare sub ${AGE_MIN} de ani: nu se folosește pentru clipuri.`, 5000);
   const st = {id:uid(), at:Date.now(), title:P.title, text:P.text, charId:C.charId, start:await putBlob('img', C.start), aspect:S.aspect, audio:!!S.audio, best2:S.best2 === 'on',
     segs:P.scenes.map(x => ({ro:x.ro, sec:x.sec, mk:x.mk, res:x.res, clip:null, job:null})), state:'lucru',
@@ -173,6 +175,9 @@ function storyResume(sid){
     st.stepAllowance = 1;
   }
   if(continuityNeedsApproval(st)) return toast('Verifică și acceptă tranziția înainte de următoarea scenă.',6000);
+  const next=st.segs.find(x=>!x.clip);
+  if(next){const m=MODELE[next.mk],estimated=costClip(next.mk,next.res,next.sec,m.audio==='always'||(m.audio==='switch'&&st.audio),false).usd*(st.best2?2:1);
+    if(!approveEstimatedCost(st.stepByStep?'Scena următoare':'Reluarea poveștii',estimated,'Estimare pentru scena imediat următoare; în modul automat pot urma și alte scene.'))return;}
   st.state = 'lucru'; saveStories(); closeSheet(); storyNext(sid);
   toast(st.stepByStep ? 'Se generează doar scena următoare.' : 'Povestea continuă.');
 }

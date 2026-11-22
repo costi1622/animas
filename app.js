@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.14';
+const APP_VER = '1.14.1';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -80,7 +80,7 @@ const DB = {
   set(k, v){ return this._q('readwrite', s => s.put(v, k)); },
   del(k){ return this._q('readwrite', s => s.delete(k)); }
 };
-const DEF = {clKey:'', rwKey:'', clModel:'claude-sonnet-5-5', useClaude:'on', checkSteps:'on', endFrame:'on', best2:'off', autoFix:'off', mk:'kling4f', res:'720p', sec:5, audio:true, aspect:'9:16', checkFace:'on', costs:{days:{}, claude:0, runware:0}};
+const DEF = {clKey:'', rwKey:'', clModel:'claude-sonnet-5-5', useClaude:'on', checkSteps:'on', endFrame:'on', best2:'off', autoFix:'off', mk:'kling4f', res:'720p', sec:5, audio:true, aspect:'9:16', checkFace:'on', monthlyBudget:30, costs:{days:{}, claude:0, runware:0}};
 let S = {...DEF}, chars = [], clips = [], jobs = [];
 const saveS = () => DB.set('settings', S);
 const saveChars = () => DB.set('chars', chars);
@@ -97,6 +97,31 @@ function addCost(kind, v, detail = ''){
   ledger.push({at:Date.now(), kind, usd:Math.round(v*1e6)/1e6, detail:String(detail||'Operațiune fără categorie detaliată').slice(0,100)});
   if(ledger.length > 1500) ledger.splice(0,ledger.length-1500);
   saveS(); renderCostLine();
+}
+// Bugetul este consultativ; totalurile lunare existente rămân sursa locală de referință.
+function monthlySpent(){
+  const month=dayKey().slice(0,7), days=(S.costs&&S.costs.days)||{};
+  return Object.entries(days).filter(([k])=>k.startsWith(month)).reduce((sum,[,v])=>sum+(+v||0),0);
+}
+function monthlyBudget(){return Math.max(0,Number(S.monthlyBudget)||0);}
+function setMonthlyBudget(raw){
+  const n=Number(raw);
+  if(!Number.isFinite(n)||n<0||n>100000){toast('Introdu un buget între 0 și 100.000 USD.');renderBudget();return;}
+  S.monthlyBudget=Math.round(n*100)/100;saveS();renderBudget();
+}
+function renderBudget(){
+  const el=$('#sBudget');if(!el)return;
+  const limit=monthlyBudget(),spent=monthlySpent(),remaining=limit-spent;
+  el.innerHTML=`<h4>Buget lunar și avertizări</h4><label>Limită lunară USD (0 = fără limită)</label>`+
+    `<input type="number" min="0" max="100000" step="1" value="${limit}" onchange="setMonthlyBudget(this.value)" style="max-width:150px">`+
+    `<p>Cheltuit luna aceasta: <b>${usdC(spent)}</b> · ${limit?`Rămas: <b>${usdC(Math.max(0,remaining))}</b>`:'Limită dezactivată'}</p>`+
+    (limit?`<progress max="100" value="${Math.min(100,spent/limit*100)}" style="width:100%"></progress><p class="muted">${spent>=limit?'Bugetul este depășit.':spent>=limit*.8?'Ai consumat cel puțin 80% din buget.':'Avertizare la 80% și 100% din buget.'}</p>`:'')+
+    `<p class="muted">Avertizările nu blochează automat operațiunile. Estimările pot exclude costuri auxiliare sau prețuri variabile.</p>`;
+}
+function approveEstimatedCost(label,amount,extra=''){
+  const cost=Math.max(0,+amount||0),limit=monthlyBudget(),spent=monthlySpent(),after=spent+cost;
+  const status=!limit?'Nu ai setat o limită lunară.':after>=limit?'ATENȚIE: depășești sau ai depășit bugetul lunar.':after>=limit*.8?'ATENȚIE: vei ajunge la cel puțin 80% din buget.':'În limita bugetului configurat.';
+  return window.confirm(`${label}\nCost estimat: ${cost?usdC(cost):'variabil / necunoscut'}${extra?'\n'+extra:''}\nCheltuit luna aceasta: ${usdC(spent)}${limit?'\nBuget lunar: '+usdC(limit)+'\nDupă operațiune (estimativ): '+usdC(after):''}\n${status}\n\nContinui?`);
 }
 function renderCostLedger(){
   const el=$('#sCostLedger');if(!el)return;
@@ -277,6 +302,7 @@ async function uploadStart(inp){
 function openGen(){ $('#genBox').hidden = !$('#genBox').hidden; if(!$('#genBox').hidden) $('#genText').focus(); }
 async function genStart(){
   const text = $('#genText').value.trim(); if(!text) return toast('Scrie scena pentru poză.');
+  if(!approveEstimatedCost('Generare poză de start',0,'Cost Runware variabil; Claude poate adăuga cost.'))return;
   const c = charById(C.charId), btn = $('#btnGenGo'); btn.disabled = true; btn.textContent = 'Scriu promptul…';
   try{
     let prompt = text;
@@ -403,6 +429,7 @@ async function testVoice(){
     status.textContent = 'Mostră deja generată în această sesiune. Nu s-a făcut o nouă cerere.';
     audio.play().catch(()=>{}); return;
   }
+  if(!approveEstimatedCost('Test voce TTS',0,'Cost Runware variabil, fără video.'))return;
   voicePreviewBusy = true; btn.disabled = true;
   status.textContent = 'Generez doar audio prin Runware (operațiune cu cost).';
   try{
@@ -517,6 +544,9 @@ async function btnPrepare(){ const b = $('#btnPrep'); b.disabled = true; b.textC
 async function send(final){
   if(!S.rwKey) return toast('Lipsește cheia Runware (Setări).');
   if(send.pending) return;
+  const est=final?clipCost(true).usd:clipCost(false).usd;
+  const dub=final&&C.dialogue.trim()?costLipsync({sec:+S.sec},C.dialogue.length):0;
+  if(!approveEstimatedCost(final?'Clip final':'Schiță',(est+dub)*(S.best2==='on'?2:1),'Costurile de verificare, cadre și procesare pot fi suplimentare.'))return;
   send.pending = true;
   const btn = final ? $('#btnFinal') : $('#btnDraft');
   $('#btnFinal').disabled = $('#btnDraft').disabled = true;
@@ -1004,7 +1034,7 @@ function renderSettings(){
   $('#sUseCl').checked = S.useClaude === 'on'; $('#sFace').checked = S.checkFace === 'on'; $('#sSteps').checked = S.checkSteps !== 'off'; $('#sEnd').checked = S.endFrame !== 'off'; $('#sFix').checked = S.autoFix === 'on'; $('#sBest2').checked = S.best2 === 'on';
   const c = S.costs || {days:{}}, d = dayKey(), mo = d.slice(0, 7);
   const month = Object.entries(c.days || {}).filter(([k]) => k.startsWith(mo)).reduce((a, [, v]) => a + v, 0);
-  renderCostLedger();
+  renderCostLedger(); renderBudget();
   $('#sCosts').innerHTML = `Azi: <b>${usdC(c.days[d] || 0)}</b> · Luna aceasta: <b>${usdC(month)}</b><br>Total Runware: ${usdC(c.runware || 0)} · Total Claude: ${usdC(c.claude || 0)}`;
   if(navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then(e => { $('#sStore').textContent = `Spațiu folosit: ${(e.usage / 1048576).toFixed(0)} MB din ${(e.quota / 1048576 / 1024).toFixed(1)} GB disponibili`; }).catch(() => {});
 }
