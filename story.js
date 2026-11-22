@@ -79,13 +79,37 @@ async function storyStart(){
 }
 // ultimul cadru al unui clip (de aici pornește scena următoare)
 async function lastFrame(vb){
-  const u = URL.createObjectURL(vb), v = document.createElement('video'); v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = u;
+  if(!(vb instanceof Blob) || !vb.size) throw new Error('Clipul anterior lipsește; continuarea a fost oprită fără costuri.');
+  const u = URL.createObjectURL(vb), v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'auto';
+  const waitVideo = (event, ms) => new Promise((resolve, reject) => {
+    let timer;
+    const done = (error) => { clearTimeout(timer); v.removeEventListener(event, ok); v.removeEventListener('error', bad); error ? reject(error) : resolve(); };
+    const ok = () => done();
+    const bad = () => done(new Error('Videoclipul anterior nu poate fi decodat.'));
+    v.addEventListener(event, ok, {once:true}); v.addEventListener('error', bad, {once:true});
+    timer = setTimeout(() => done(new Error('Timeout la citirea videoclipului anterior.')), ms);
+  });
   try{
-    await new Promise((res, rej) => { v.addEventListener('loadeddata', res, {once:true}); v.addEventListener('error', () => rej(new Error('clipul nu se poate citi')), {once:true}); setTimeout(() => rej(new Error('timeout')), 20000); });
-    await new Promise(res => { const tm = setTimeout(res, 4000); v.addEventListener('seeked', () => { clearTimeout(tm); res(); }, {once:true}); v.currentTime = Math.max(0, v.duration - .05); });
-    const cv = document.createElement('canvas'); cv.width = v.videoWidth; cv.height = v.videoHeight; cv.getContext('2d').drawImage(v, 0, 0);
-    return await cvBlob(cv, .95);
-  } finally { URL.revokeObjectURL(u); try{ v.removeAttribute('src'); v.load(); }catch(e){} }
+    const ready = waitVideo('loadedmetadata', 20000); v.src = u; await ready;
+    if(!Number.isFinite(v.duration) || v.duration <= 0 || !v.videoWidth || !v.videoHeight)
+      throw new Error('Durata sau dimensiunile clipului anterior sunt invalide.');
+    const canvas = document.createElement('canvas'); canvas.width = v.videoWidth; canvas.height = v.videoHeight;
+    const ctx = canvas.getContext('2d', {willReadFrequently:true});
+    if(!ctx) throw new Error('Nu se poate extrage cadrul video.');
+    const offsets = [.12, .35, .75, 1.25].filter(x => x < v.duration);
+    for(const offset of offsets.length ? offsets : [Math.min(.05, v.duration / 2)]){
+      const target = Math.max(0, v.duration - offset);
+      const seek = waitVideo('seeked', 8000); v.currentTime = target; await seek;
+      ctx.drawImage(v, 0, 0);
+      const sample = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let bright = 0, count = 0;
+      const step = Math.max(4, Math.floor(sample.length / 4000 / 4) * 4);
+      for(let k=0;k<sample.length;k+=step){ bright += sample[k]+sample[k+1]+sample[k+2]; count++; }
+      if(count && bright/(count*3) > 9) return await cvBlob(canvas, .95);
+    }
+    throw new Error('Ultimele cadre sunt negre; verifică finalul clipului înainte de continuare.');
+  }finally{ URL.revokeObjectURL(u); try{ v.pause(); v.removeAttribute('src'); v.load(); }catch(e){} }
 }
 // scorul feței la legătura dintre scene (ultimul cadru al scenei dinainte)
 async function linkScore(c, b){ return idScore(c, b); }
@@ -109,7 +133,10 @@ async function storyNext(sid){
   STORY_RUN[sid] = true; st.state = 'lucru'; st.err = ''; await saveStories();
   try{
     const g = st.segs[i], c = charById(st.charId);
-    let start = i === 0 ? await DB.get(st.start) : await lastFrame(await DB.get(clips.find(x => x.id === st.segs[i - 1].clip).vid));
+    const prev = i > 0 ? clips.find(x => x.id === st.segs[i - 1].clip) : null;
+    if(i > 0 && !prev) throw new Error('Scena anterioară nu mai există; continuarea a fost oprită.');
+    let start = i === 0 ? await DB.get(st.start) : await lastFrame(await DB.get(prev.vid));
+    if(!(start instanceof Blob) || !start.size) throw new Error('Cadrul de pornire lipsește; continuarea a fost oprită.');
     if(i > 0 && c){ const f = await linkScore(c, start).catch(() => null); if(f != null && f < ID_OK){ const r = await reanchor(start, c).catch(() => null); if(r) start = r; } }
     let view = null; try{ view = bodyView(await bodyOf(start)); }catch(e){}
     const r = await planFor({text:g.ro, start, mk:g.mk, sec:g.sec, audio:st.audio, c, framing:view && view.en});
