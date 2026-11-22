@@ -1,5 +1,5 @@
 /* Animas: aplicația merge și fără rețea pentru ecrane; cererile spre Claude și Runware merg mereu la rețea. */
-const CACHE = 'animas-v23', LIB = 'animas-lib-1';   // 1.9.0: bibliotecile mari (vendor/, inclusiv FFmpeg) într-o copie care rămâne între versiuni
+const CACHE = 'animas-v24', LIB = 'animas-lib-1';   // 1.9.0: bibliotecile mari (vendor/, inclusiv FFmpeg) într-o copie care rămâne între versiuni
 const CORE = ['./', 'index.html', 'app.js', 'runware.js', 'claude.js', 'face.js', 'body.js', 'post.js', 'story.js', 'callset.js', 'videoMerger.js', 'videoAnalyzer.js', 'continuityEngine.js', 'montaj.js', 'prompt.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'fonts/pjs-latin.woff2', 'fonts/pjs-latin-ext.woff2'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE.map(u => new Request(u, {cache:'reload'})))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('animas-') && k !== CACHE && k !== LIB).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

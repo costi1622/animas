@@ -138,6 +138,14 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
         <label>Voce<select id="cVoice" onchange="setVoiceProfile()"></select></label>
         <label>Stil vocal<select id="cVoiceStyle" onchange="setVoiceProfile()"></select></label>
       </div>
+      <div class="grid2">
+        <label>Accent<select id="cAccent" onchange="setVoiceProfile()"><option value="none">Fără accent specificat</option><option value="venezuelan">Spaniolă venezueleană</option><option value="neutralLatam">Latino-american</option></select></label>
+        <label>Intensitatea accentului<select id="cAccentIntensity" onchange="setVoiceProfile()"><option value="subtle">Discret</option><option value="distinct">Distinct, natural</option><option value="strong">Pronunțat</option></select></label>
+      </div>
+      <div class="row wrap"><button class="sm ghost" id="cVoiceTest" onclick="testVoice()">▶ Testează vocea (doar audio)</button></div>
+      <p class="muted">Testul folosește replica exactă de mai sus sau o replică demonstrativă dacă este goală. Generează doar TTS prin Runware, cu cost variabil; nu generează video și nu sincronizează buzele. Mostrele identice se reutilizează în sesiunea curentă.</p>
+      <audio id="cVoiceAudio" controls preload="none" hidden style="width:100%"></audio>
+      <p class="muted" id="cVoiceTestStatus" role="status"></p>
       <p class="muted" id="cVoiceStatus" role="status"></p>
       <p id="cDialogueTime" role="status" hidden></p>
       <details id="promptDetails"><summary>Prompt și plan</summary>
@@ -212,18 +220,18 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
 <div id="updBar" hidden><span>E o versiune nouă: v<b></b></span><button class="sm" onclick="forceUpdate()">⟳ Actualizează</button><button class="sm ghost" onclick="this.parentNode.hidden = true" aria-label="Închide">✕</button></div>
 <div id="toast"></div>
 <!-- 1.9.1: ?v=<versiunea> la fiecare script: la o versiune nouă telefonul cere fișierele noi, nu copia veche (se schimbă odată cu APP_VER) -->
-<script src="prompt.js?v=1.10"></script>
-<script src="runware.js?v=1.10"></script>
-<script src="claude.js?v=1.10"></script>
-<script src="face.js?v=1.10"></script>
-<script src="body.js?v=1.10"></script>
-<script src="post.js?v=1.10"></script>
-<script src="story.js?v=1.10"></script>
-<script src="callset.js?v=1.10"></script>
-<script src="videoMerger.js?v=1.10"></script>
-<script src="videoAnalyzer.js?v=1.10"></script>
-<script src="continuityEngine.js?v=1.10"></script>
-<script src="montaj.js?v=1.10"></script>
-<script src="app.js?v=1.10"></script>
+<script src="prompt.js?v=1.11"></script>
+<script src="runware.js?v=1.11"></script>
+<script src="claude.js?v=1.11"></script>
+<script src="face.js?v=1.11"></script>
+<script src="body.js?v=1.11"></script>
+<script src="post.js?v=1.11"></script>
+<script src="story.js?v=1.11"></script>
+<script src="callset.js?v=1.11"></script>
+<script src="videoMerger.js?v=1.11"></script>
+<script src="videoAnalyzer.js?v=1.11"></script>
+<script src="continuityEngine.js?v=1.11"></script>
+<script src="montaj.js?v=1.11"></script>
+<script src="app.js?v=1.11"></script>
 </body>
 </html>

@@ -29,11 +29,19 @@ const TTS_STYLES = {
   playful:'Warm, playful, friendly, lightly smiling, natural pace.',
   neutral:'Clear, natural, conversational delivery without exaggeration.'
 };
-function ttsTask(text, voice, style){
+const TTS_ACCENTS = {none:'Fără indicații suplimentare', venezuelan:'Spaniolă venezueleană (în engleză)', neutralLatam:'Accent latino-american discret'};
+const TTS_INTENSITIES = {subtle:'subtle', distinct:'distinct but natural', strong:'pronounced but intelligible'};
+function ttsDirection(style, accent='none', intensity='distinct'){
+  let direction = TTS_STYLES[style] || TTS_STYLES.warm;
+  if(accent === 'venezuelan') direction += ' Speak English fluently with a ' + (TTS_INTENSITIES[intensity] || TTS_INTENSITIES.distinct) + ' Venezuelan Spanish accent; feminine, warm and melodic. Pronounce Spanish words naturally. Never change the exact words.';
+  if(accent === 'neutralLatam') direction += ' Speak English with a ' + (TTS_INTENSITIES[intensity] || TTS_INTENSITIES.distinct) + ' Latin American Spanish accent. Never change the exact words.';
+  return direction;
+}
+function ttsTask(text, voice, style, accent='none', intensity='distinct'){
   return {taskType:'audioInference', taskUUID:crypto.randomUUID(), model:POST.tts.id,
     outputType:'URL', outputFormat:'MP3',
     speech:{text:String(text).slice(0, 4000), voice:TTS_VOICES.includes(voice) ? voice : 'Gacrux'},
-    settings:{style:TTS_STYLES[style] || TTS_STYLES.warm}};
+    settings:{style:ttsDirection(style, accent, intensity)}};
 }
 function lipsyncTask(src, audioUrl){
   return {taskType:'videoInference', taskUUID:crypto.randomUUID(), model:POST.lipsync.id, outputType:'URL', outputFormat:'MP4',
@@ -68,7 +76,7 @@ async function postTask(job){
     }
     if(!job.audioUrl){
       job.state = 'voce'; updJob(job);
-      const t = ttsTask(job.opts.text, job.opts.voice || (c && c.ttsVoice), job.opts.style || (c && c.ttsStyle));
+      const t = ttsTask(job.opts.text, job.opts.voice || (c && c.ttsVoice), job.opts.style || (c && c.ttsStyle), job.opts.accent || (c && c.ttsAccent), job.opts.intensity || (c && c.ttsIntensity));
       let a, sending = false;
       try{
         if(!job.ttsUUID){

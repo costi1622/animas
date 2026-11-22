@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.10';
+const APP_VER = '1.11';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -328,17 +328,23 @@ const STUDIO_VIDEO_DIRECTION = 'Keep the face and lips visible for dubbing. No a
 const VOICE_LABELS = {warm:'Cald și afectuos', gentle:'Blând și liniștitor', playful:'Jucăuș', neutral:'Neutru'};
 function voiceProfile(c){
   return {voice:TTS_VOICES.includes(c && c.ttsVoice) ? c.ttsVoice : 'Gacrux',
-    style:c && Object.hasOwn(TTS_STYLES, c.ttsStyle) ? c.ttsStyle : 'warm'};
+    style:c && Object.hasOwn(TTS_STYLES, c.ttsStyle) ? c.ttsStyle : 'warm',
+    accent:c && Object.hasOwn(TTS_ACCENTS, c.ttsAccent) ? c.ttsAccent : 'none',
+    intensity:c && Object.hasOwn(TTS_INTENSITIES, c.ttsIntensity) ? c.ttsIntensity : 'distinct'};
 }
 function renderVoiceStudio(){
-  const c = charById(C.charId), {voice, style} = voiceProfile(c);
+  const c = charById(C.charId), {voice, style, accent, intensity} = voiceProfile(c);
   $('#cDialogue').value = C.dialogue;
   $('#cDialogue').disabled = !c;
-  $('#cVoice').disabled = $('#cVoiceStyle').disabled = !c;
+  $('#cVoice').disabled = $('#cVoiceStyle').disabled = $('#cAccent').disabled = $('#cAccentIntensity').disabled = $('#cVoiceTest').disabled = !c;
   $('#cVoice').innerHTML = TTS_VOICES.map(v => '<option>' + v + '</option>').join('');
   $('#cVoiceStyle').innerHTML = Object.entries(VOICE_LABELS).map(([key, label]) => '<option value="' + key + '">' + label + '</option>').join('');
   $('#cVoice').value = voice;
   $('#cVoiceStyle').value = style;
+  $('#cAccent').value = accent;
+  $('#cAccentIntensity').value = intensity;
+  $('#cVoiceAudio').hidden = true;
+  $('#cVoiceTestStatus').textContent = '';
   $('#cVoiceStatus').textContent = c ? 'Vocea și stilul se salvează pentru ' + c.name + '.' : 'Alege un personaj pentru a adăuga o replică.';
   renderDialogueTime();
 }
@@ -347,8 +353,42 @@ async function setVoiceProfile(){
   if(!c) return;
   c.ttsVoice = $('#cVoice').value;
   c.ttsStyle = $('#cVoiceStyle').value;
+  c.ttsAccent = $('#cAccent').value;
+  c.ttsIntensity = $('#cAccentIntensity').value;
   renderDialogueTime();
   try{ await saveChars(); }catch(e){ toast('Profilul vocal nu a putut fi salvat. Alege din nou vocea sau stilul.', 6000); }
+}
+// Voice Lab: cerere TTS izolată, fără generare video și fără lipsync.
+// Mostrele sunt ținute numai în memoria sesiunii; nu păstrăm URL-uri temporare în profil.
+const voiceSamples = new Map();
+let voicePreviewBusy = false;
+async function testVoice(){
+  const c = charById(C.charId);
+  if(!c || voicePreviewBusy) return;
+  if(!rwKey()) return toast('Adaugă cheia Runware în Setări pentru testul audio.', 5000);
+  const text = String(C.dialogue || '').trim() || 'Ay, cariño! I am so happy to see you, mi amor.';
+  if(text.length > 4000) return toast('Replica depășește 4.000 de caractere.');
+  const profile = voiceProfile(c), key = JSON.stringify([text,profile]);
+  const audio = $('#cVoiceAudio'), status = $('#cVoiceTestStatus'), btn = $('#cVoiceTest');
+  if(voiceSamples.has(key)){
+    audio.src = voiceSamples.get(key); audio.hidden = false;
+    status.textContent = 'Mostră deja generată în această sesiune. Nu s-a făcut o nouă cerere.';
+    audio.play().catch(()=>{}); return;
+  }
+  voicePreviewBusy = true; btn.disabled = true;
+  status.textContent = 'Generez doar audio prin Runware (operațiune cu cost).';
+  try{
+    const task = ttsTask(text, profile.voice, profile.style, profile.accent, profile.intensity);
+    await rwSend(task);
+    const result = await rwWait(task.taskUUID, 'image', {maxMs:5*60e3});
+    if(!result || !/^https:\/\//i.test(result.audioURL || '')) throw new Error('Nu am primit un URL audio HTTPS valid.');
+    if(+result.cost > 0) addCost('runware', +result.cost);
+    voiceSamples.set(key, result.audioURL);
+    audio.src = result.audioURL; audio.hidden = false;
+    status.textContent = 'Mostră gata' + (+result.cost > 0 ? ' · cost raportat: ' + usdC(result.cost) : ' · costul exact nu a fost raportat') + '. Fără video și lip-sync.';
+    await audio.play().catch(()=>{});
+  }catch(e){ status.textContent = 'Testul audio a eșuat: ' + (e.message || e); }
+  finally{ voicePreviewBusy = false; btn.disabled = !charById(C.charId); }
 }
 function onDialogue(value){
   C.dialogue = value;
