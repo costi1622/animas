@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.14.3';
+const APP_VER = '1.14.4';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -474,7 +474,7 @@ async function useSuggest(){ if(!C.secSuggest) return; setOpt('sec', C.secSugges
 const SENSUAL_SCENES = {
   kissPov: 'Două personaje fictive adulte. Camera rămâne la nivelul ochilor partenerului, din perspectiva lui, fără schimbare de unghi. Ea se apropie, îi întâlnește privirea și înclină ușor capul ca răspuns la apropiere. Camera înaintează puțin pentru un sărut intens reciproc, apoi se retrage câțiva centimetri. Ea rămâne în prim-plan. Hainele rămân pe loc.',
   selfTouch: 'Personaj fictiv adult, singur în cadru. Ea își cuprinde sânii cu ambele mâini peste bluză, îi mângâie încet și își mută jucăuș palmele peste material. Își păstrează expresia relaxată, apoi își lasă mâinile să coboare. Cadru mediu stabil, cu fața și ambele mâini vizibile. Bluza rămâne pe loc.',
-  impliedPov: 'Două personaje fictive adulte, într-un moment intim reciproc. Perspectiva partenerului rămâne pe fața, umerii și partea de sus a corpului ei. Ea îi susține privirea, zâmbește scurt și își mișcă ușor antebrațul la marginea de jos a cadrului, sugerând o stimulare manuală simulată. Gestul și zona intimă rămân în afara imaginii pe tot parcursul clipului. Cameră stabilă, un singur cadru.',
+  impliedPov: 'Simulare de stimulare manuală în POV, cu un personaj fictiv adult. Numai ea este vizibilă. Camera fixă este privirea partenerului, drept în fața ei. Fața și umerii ei rămân vizibili, iar o singură mână a ei intră în prim-plan, aproape de obiectiv, în centrul jumătății de jos a imaginii. Cu degetele ușor curbate, ridică și coboară mâna pe verticală de trei ori, lent și ritmic, fără ca mâna să iasă din cadru. Păstrează privirea spre cameră. Nici partenerul, nici un obiect, nici zone intime nu apar în imagine. Un singur cadru, fără panoramare sau schimbare de perspectivă.',
   touch: 'Două personaje fictive adulte. Din perspectiva partenerului, personajul îi prinde ușor mâna și o îndrumă spre piept, peste bluză. După un semn clar de acord, partenerul îi mângâie ușor sânii peste material, apoi își retrage mâna. Personajul îi susține privirea. Hainele rămân pe loc. Cadru mediu, mișcare lentă.',
   dance: 'Două personaje fictive adulte dansează lent. Din perspectiva partenerului, o mână vizibilă se așază pe talia personajului după ce acesta se apropie. Fac un pas împreună, se leagănă ușor și se privesc. Cadru mediu, lumină caldă, hainele rămân pe loc.',
   collar: 'Personajul fictiv adult se apropie, își potrivește gulerul cu două degete, apoi lasă mâna jos și ține privirea către cameră câteva secunde. Expresie discret jucăușă, cadru mediu, hainele rămân pe loc.',
