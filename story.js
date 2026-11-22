@@ -230,12 +230,15 @@ function continuityStatus(st){
 }
 // 1.13: instrumente locale de inspecție, exclusiv din clipurile deja salvate.
 // 1.13.1: două playere pregătite înainte de redare; evităm schimbarea src pe același player.
+// 1.13.2: două playere + cadru de rezervă și jurnal local pentru diagnostic.
 let transitionSession = null;
 function stopTransitionPreview(){
   const t=transitionSession; transitionSession=null;
   if(!t)return;
   t.stopped=true;
-  for(const v of t.players){try{v.pause();v.removeAttribute('src');v.load();}catch(_){}}
+  for(const v of t.players){
+    try{v.pause();v.ontimeupdate=null;v.onended=null;v.removeAttribute('src');v.load();}catch(_){}
+  }
   for(const u of t.urls)URL.revokeObjectURL(u);
 }
 async function storyPreviewTransition(sid){
@@ -250,15 +253,35 @@ async function storyPreviewTransition(sid){
     if(blobs.some(b=>!(b instanceof Blob)||!b.size))throw Error('Lipsește un videoclip salvat.');
     urls=blobs.map(b=>URL.createObjectURL(b));
     const old=$('#stPlayer');if(old)old.pause();
-    slot.innerHTML=`<b>Previzualizare gratuită: ultimele 2 s → primele 2 s</b><div class="muted" id="transitionInfo">Pregătesc ambele clipuri local, fără Runware.</div><div class="transition-stack" style="position:relative;overflow:hidden;background:#000;border-radius:12px;aspect-ratio:9/16;max-height:65vh"><video id="transitionA" playsinline muted preload="auto" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:1"></video><video id="transitionB" playsinline muted preload="auto" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0"></video></div><div class="row wrap"><button class="sm ghost" id="transitionReplay" disabled onclick="storyPreviewTransition('${sid}')">↻ Repetă tranziția</button></div>`;
+    slot.innerHTML=`<b>Previzualizare gratuită: ultimele 2 s → primele 2 s</b>
+      <div class="muted" id="transitionInfo">Pregătesc ambele clipuri local, fără Runware.</div>
+      <div class="transition-stack" style="position:relative;overflow:hidden;background:#000;border-radius:12px;aspect-ratio:9/16;max-height:65vh">
+        <video id="transitionA" playsinline muted preload="auto" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:1"></video>
+        <video id="transitionB" playsinline muted preload="auto" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0"></video>
+        <canvas id="transitionHold" aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;pointer-events:none"></canvas>
+      </div>
+      <div class="row wrap"><button class="sm ghost" id="transitionReplay" disabled onclick="storyPreviewTransition('${sid}')">↻ Repetă tranziția</button></div>
+      <details><summary>Diagnostic redare (local, fără API)</summary><pre id="transitionLog" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:200px;overflow:auto"></pre></details>`;
     const players=[$('#transitionA'),$('#transitionB')];
-    const session={urls,players,stopped:false};transitionSession=session;
+    const hold=$('#transitionHold'),info=$('#transitionInfo'),replay=$('#transitionReplay');
+    const session={urls,players,stopped:false,events:[]};transitionSession=session;
+    const log=(msg)=>{
+      if(session.stopped)return;
+      const line=`${new Date().toLocaleTimeString()} ${msg}`;
+      session.events.push(line);
+      if(session.events.length>70)session.events.shift();
+      const el=$('#transitionLog');if(el)el.textContent=session.events.join('\n');
+    };
     const wait=(v,event,timeout=12000)=>new Promise((resolve,reject)=>{
-      let timer;const clean=()=>{clearTimeout(timer);v.removeEventListener(event,ok);v.removeEventListener('error',bad);};
+      let timer;
+      const clean=()=>{clearTimeout(timer);v.removeEventListener(event,ok);v.removeEventListener('error',bad);};
       const ok=()=>{clean();resolve();},bad=()=>{clean();reject(Error('Nu se poate decoda clipul.'));};
       v.addEventListener(event,ok,{once:true});v.addEventListener('error',bad,{once:true});
       timer=setTimeout(()=>{clean();reject(Error('Timeout la pregătirea clipului.'));},timeout);
     });
+    players.forEach((v,i)=>['loadedmetadata','loadeddata','canplay','playing','waiting','stalled','error'].forEach(ev=>
+      v.addEventListener(ev,()=>log(`Scena ${i+1}: ${ev} (${v.currentTime.toFixed(2)}s, readyState=${v.readyState})`))
+    ));
     await Promise.all(players.map(async(v,i)=>{const ready=wait(v,'loadedmetadata');v.src=urls[i];await ready;}));
     if(session.stopped)return;
     const startA=Math.max(0,players[0].duration-2),endA=Math.max(startA,players[0].duration-.05);
@@ -269,20 +292,47 @@ async function storyPreviewTransition(sid){
       else if(v.readyState<2)await wait(v,'loadeddata');
     }));
     if(session.stopped)return;
-    const info=$('#transitionInfo'),replay=$('#transitionReplay');if(replay)replay.disabled=false;
-    if(info)info.textContent='Ambele clipuri pregătite. Trecerea se face fără schimbarea sursei playerului. Fără cost API.';
+    if(replay)replay.disabled=false;
+    if(info)info.textContent='Clipurile sunt pregătite. La schimbare păstrăm ultimul cadru până pornește următorul.';
+    const a=players[0],b=players[1];
     let switched=false;
-    const b=players[1],v=players[0];
-    const switchToB=()=>{
-      if(switched||session.stopped)return;switched=true;
-      // Clipul B e deja decodat și poziționat; schimbăm doar vizibilitatea.
-      b.style.opacity='1';v.style.opacity='0';v.pause();
-      b.play().catch(()=>{if(info)info.textContent='Apasă pe ecran pentru a permite redarea.';});
+    const captureHold=()=>{
+      try{
+        if(!a.videoWidth||!a.videoHeight)return false;
+        hold.width=a.videoWidth;hold.height=a.videoHeight;
+        hold.getContext('2d').drawImage(a,0,0,hold.width,hold.height);
+        hold.style.opacity='1';return true;
+      }catch(e){log('Captura cadrului nu a reușit: '+e.message);return false;}
     };
-    v.ontimeupdate=()=>{if(v.currentTime>=endA) switchToB();};
-    v.onended=switchToB;
-    b.ontimeupdate=()=>{if(b.currentTime>=endB){b.pause();b.ontimeupdate=null;if(info)info.textContent='Previzualizare încheiată. Poți repeta gratuit.';}};
-    await v.play();
+    const switchToB=async()=>{
+      if(switched||session.stopped)return;switched=true;
+      log('Încep schimbarea; păstrez cadrul A până la primul cadru B.');
+      captureHold();
+      a.pause();
+      // B rămâne invizibil până ce redarea a pornit efectiv.
+      try{
+        if(b.readyState<2)await wait(b,'loadeddata',10000);
+        if(session.stopped)return;
+        const playing=wait(b,'playing',10000);
+        const started=b.play();
+        await Promise.all([playing,started]);
+        if(session.stopped)return;
+        // Lăsăm compositorului un cadru pentru a afișa efectiv imaginea B.
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        if(session.stopped)return;
+        b.style.opacity='1';a.style.opacity='0';hold.style.opacity='0';
+        log('Scena B vizibilă, readyState='+b.readyState);
+      }catch(e){
+        log('Scena B nu a pornit: '+e.message);
+        if(info)info.textContent='Scena următoare nu a pornit. Cadrul precedent rămâne afișat; apasă Repetă tranziția.';
+        // Nu eliminăm cadrul de rezervă în caz de eroare.
+      }
+    };
+    a.ontimeupdate=()=>{if(a.currentTime>=endA)void switchToB();};
+    a.onended=()=>void switchToB();
+    b.ontimeupdate=()=>{if(b.currentTime>=endB){b.pause();b.ontimeupdate=null;if(info)info.textContent='Previzualizare încheiată. Poți repeta gratuit.';log('Previzualizare încheiată');}};
+    await a.play();
+    log('Redarea scenei A a început');
   }catch(e){
     stopTransitionPreview();
     urls.forEach(u=>{try{URL.revokeObjectURL(u)}catch(_){}});
