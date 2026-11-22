@@ -66,13 +66,15 @@ function renderStoryPlan(){
   el.innerHTML = `<label>${esc(P.title)} · ${P.scenes.length} scene · ${dur} s</label><ol class="steps">` + P.scenes.map((x, i) => `<li>${esc(x.ro)} <span class="sec">${x.sec} s · ${esc(MODELE[x.mk].nume)} · ${usdC(x.cost)}</span></li>`).join('') + '</ol>'
     + (P.nota ? `<div class="muted">${esc(P.nota)}</div>` : '')
     + `<div class="muted">Cost estimat: <b>${usdC(tot * n2)}</b>${n2 > 1 ? ' (cel mai bun din 2 pe fiecare scenă)' : ''} + cadre finale și verificări (~1–3 cenți pe scenă). Modelul fiecărei scene e ales automat.</div>`
-    + `<div class="row wrap"><button onclick="storyStart()">▶ Pornește povestea · ${usdC(tot * n2)}</button><button class="sm ghost" onclick="ST.plan = null; renderStoryPlan()">Renunță</button></div>`;
+    + `<div class="row wrap"><button onclick="storyStart(true)">▶ Generează doar prima scenă · ${usdC(P.scenes[0].cost * n2)}</button><button class="sm ghost" onclick="storyStart(false)">▶ Toată povestea · ${usdC(tot * n2)}</button><button class="sm ghost" onclick="ST.plan = null; renderStoryPlan()">Renunță</button></div>`
+    + `<div class="muted">Modul scenă cu scenă se oprește automat după fiecare clip finalizat. Continuarea se aprobă separat în Galerie. Costurile de cadre/verificări pot fi suplimentare.</div>`;
 }
-async function storyStart(){
+async function storyStart(stepByStep = false){
   const P = ST.plan; if(!P || !C.start) return;
   if(isYoung(charById(C.charId))) return toast(`Personajul pare sub ${AGE_MIN} de ani: nu se folosește pentru clipuri.`, 5000);
   const st = {id:uid(), at:Date.now(), title:P.title, text:P.text, charId:C.charId, start:await putBlob('img', C.start), aspect:S.aspect, audio:!!S.audio, best2:S.best2 === 'on',
-    segs:P.scenes.map(x => ({ro:x.ro, sec:x.sec, mk:x.mk, res:x.res, clip:null, job:null})), state:'lucru'};
+    segs:P.scenes.map(x => ({ro:x.ro, sec:x.sec, mk:x.mk, res:x.res, clip:null, job:null})), state:'lucru',
+    stepByStep:!!stepByStep, stepAllowance:stepByStep ? 1 : null};
   stories.unshift(st); await saveStories(); ST.plan = null; renderStoryPlan();
   toast('Povestea a pornit: scenele se fac una după alta. Poți închide aplicația; la redeschidere continuă.', 6000);
   storyNext(st.id);
@@ -130,6 +132,12 @@ async function storyNext(sid){
   const i = st.segs.findIndex(g => !g.clip);
   if(i < 0){ st.state = 'gata'; await saveStories(); toast(`Povestea „${st.title}” e gata: ${st.segs.length} scene.`, 6000); if(!$('#v-galerie').hidden) renderGallery(); return; }
   if(jobs.some(j => j.storyId === sid && j.seg === i)) return;   // scena e deja în lucru
+  if(st.stepByStep && !(st.stepAllowance > 0)){
+    st.state = 'așteaptă'; await saveStories();
+    if(!$('#v-galerie').hidden) renderGallery();
+    toast('Scena este gata. Verifică rezultatul în Galerie și aprobă următoarea scenă.', 6000);
+    return;
+  }
   STORY_RUN[sid] = true; st.state = 'lucru'; st.err = ''; await saveStories();
   try{
     const g = st.segs[i], c = charById(st.charId);
@@ -151,12 +159,22 @@ async function storyNext(sid){
         end:endKey, endPose:(r.plan && r.plan.endPose) || '', endScore, mk:g.mk, res:g.res, sec:g.sec, audio:au, draft:false, aspect:st.aspect, est:est.usd, estMin:est.min, state:'trimit'};
       jobs.unshift(job); await saveJobs(); runJob(job);
     }
+    if(st.stepByStep) st.stepAllowance = Math.max(0, (st.stepAllowance || 0) - 1);
+    await saveStories();
     renderJobs();
   }catch(e){ storyPause(sid, e.message || e); }
   finally{ delete STORY_RUN[sid]; }
 }
 function storyStop(sid){ const st = storyById(sid); if(!st) return; st.state = 'oprit'; saveStories(); closeSheet(); renderGallery(); toast('Povestea e oprită; scenele făcute rămân. „Continuă” o pornește iar.'); }
-function storyResume(sid){ const st = storyById(sid); if(!st) return; st.state = 'lucru'; saveStories(); closeSheet(); storyNext(sid); toast('Povestea continuă.'); }
+function storyResume(sid){
+  const st = storyById(sid); if(!st || st.state === 'gata') return;
+  if(st.stepByStep){
+    if(jobs.some(j => j.storyId === sid)) return toast('Există deja o scenă în lucru.');
+    st.stepAllowance = 1;
+  }
+  st.state = 'lucru'; saveStories(); closeSheet(); storyNext(sid);
+  toast(st.stepByStep ? 'Se generează doar scena următoare.' : 'Povestea continuă.');
+}
 const storyClips = st => st.segs.map(g => g.clip && clips.find(x => x.id === g.clip)).filter(Boolean);
 
 /* ───────── galerie: cardurile poveștilor și redarea continuă ───────── */
@@ -165,7 +183,7 @@ function storyCards(){
   return '<h3>Povești</h3><div class="cards">' + stories.map(st => {
     const cs = storyClips(st), dur = cs.reduce((a, x) => a + (x.sec || 0), 0), cost = clips.filter(x => x.storyId === st.id).reduce((a, x) => a + (x.cost || 0), 0);
     return `<div class="card" onclick="openStory('${st.id}')"><div class="th aspect-${String(st.aspect || '9:16').replace(':', 'x')}"><img data-k="${(cs[0] && (cs[0].th || cs[0].start)) || st.start}" alt=""><span class="play">▶</span><span class="tag t3">${cs.length}/${st.segs.length} scene</span></div>
-      <div class="meta"><b>${esc(st.title)}</b><span>${dur} s · ${usdC(cost)}</span><span class="${st.state === 'gata' ? 'ok' : st.state === 'pauză' ? 'warn' : 'muted'}">${{lucru:'se face…', gata:'gata', pauză:'oprită la o scenă', oprit:'oprită'}[st.state] || st.state}</span></div></div>`;
+      <div class="meta"><b>${esc(st.title)}</b><span>${dur} s · ${usdC(cost)}</span><span class="${st.state === 'gata' ? 'ok' : st.state === 'pauză' ? 'warn' : 'muted'}">${{lucru:'se face…', gata:'gata', pauză:'oprită la o scenă', oprit:'oprită', 'așteaptă':'așteaptă aprobarea'}[st.state] || st.state}</span></div></div>`;
   }).join('') + '</div><h3>Clipuri</h3>';
 }
 let storyUrls = [];
@@ -177,9 +195,10 @@ async function openStory(sid){
   sheet(`<h2>${esc(st.title)}</h2>${storyUrls.length ? '<video id="stPlayer" controls autoplay playsinline class="player"></video>' : '<div class="empty">Nicio scenă gata încă.</div>'}
     <div class="row wrap acts">
       ${storyUrls.length ? `<button onclick="exportStory('${st.id}')">⬇ Salvează povestea</button>` : ''}
-      ${st.state === 'gata' ? '' : st.state === 'lucru' ? `<button class="ghost" onclick="storyStop('${st.id}')">■ Oprește</button>` : `<button onclick="storyResume('${st.id}')">▶ Continuă</button>`}
+      ${st.state === 'gata' ? '' : st.state === 'lucru' ? `<button class="ghost" onclick="storyStop('${st.id}')">■ Oprește</button>` : `<button onclick="storyResume('${st.id}')">${st.stepByStep ? '▶ Scena următoare · ' + usdC((() => { const g = st.segs.find(x => !x.clip); return g ? costClip(g.mk, g.res, g.sec, MODELE[g.mk].audio === 'always' || (MODELE[g.mk].audio === 'switch' && st.audio), false).usd * (st.best2 ? 2 : 1) : 0; })()) : '▶ Continuă'}</button>`}
       <button class="ghost danger" onclick="storyDelete('${st.id}')">🗑 Șterge povestea</button>
     </div>
+    ${st.stepByStep ? `<div class="muted">Mod scenă cu scenă · ${cs.length}/${st.segs.length} finalizate. ${st.state === 'așteaptă' ? 'Verifică scena înainte să aprobi următoarea.' : ''}</div>` : ''}
     ${st.err ? `<div class="errtxt">${esc(st.err)}</div>` : ''}
     <ol class="steps">${st.segs.map((g, i) => { const x = g.clip && clips.find(c => c.id === g.clip); return `<li>${esc(g.ro)} <span class="sec">${g.sec} s · ${esc(MODELE[g.mk].nume)}</span> ${x ? `<a href="#" onclick="event.preventDefault(); openClip('${x.id}')">${x.score && x.score.avg != null ? 'fața ' + x.score.avg + '%' : 'scena'}${x.body && x.body.avg != null ? ' · corpul ' + x.body.avg + '%' : ''}</a>` : '<span class="muted">nefăcută</span>'}</li>`; }).join('')}</ol>`);
   const v = $('#stPlayer');
