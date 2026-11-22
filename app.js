@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.9.6';
+const APP_VER = '1.10';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -175,8 +175,8 @@ function go(v){
 }
 
 /* ═════════ Creează ═════════ */
-const C = {charId:null, start:null, startSrc:'', score:null, text:'', prompt:'', promptKey:'', edited:false, nota:'', scene:'', steps:[], fits:true, secSuggest:null, missing:null};
-const promptKey = (mk = S.mk) => [C.text, mk, mk === SCHITA.model ? '' : S.sec, mk === SCHITA.model ? '' : S.audio, C.startSrc].join('|');
+const C = {charId:null, start:null, startSrc:'', score:null, text:'', dialogue:'', prompt:'', promptKey:'', edited:false, nota:'', scene:'', steps:[], fits:true, secSuggest:null, missing:null};
+const promptKey = (mk = S.mk) => JSON.stringify([C.text, !!C.dialogue.trim(), mk, S.sec, S.audio, C.charId, C.startSrc]);
 function renderCreate(){
   const ch = $('#cChars');
   if(isYoung(charById(C.charId))) C.charId = null;
@@ -186,7 +186,7 @@ function renderCreate(){
   hydrate(ch);
   renderStart(); renderOpts(); renderPrompt(); renderJobs(); renderLast(); renderCallSet();
 }
-function pickChar(id){ if(id && isYoung(charById(id))) return toast(`Personajul pare sub ${AGE_MIN} de ani: nu se folosește pentru clipuri.`, 5000); C.charId = id || null; C.start = null; C.startRaw = null; C.crop = null; C.startSrc = ''; C.score = null; renderCreate(); }
+function pickChar(id){ if(id && isYoung(charById(id))) return toast(`Personajul pare sub ${AGE_MIN} de ani: nu se folosește pentru clipuri.`, 5000); C.charId = id || null; C.start = null; C.startRaw = null; C.crop = null; C.startSrc = ''; C.score = null; if(!charById(id)) C.dialogue = ''; renderCreate(); }
 function renderStart(){
   const c = charById(C.charId), box = $('#cStart');
   $('#btnProfil').disabled = !c;
@@ -279,14 +279,14 @@ function renderOpts(){
   $('#oAspect').innerHTML = ['9:16', '16:9', '1:1'].map(a => `<button class="seg ${a === S.aspect ? 'on' : ''}" ${m.aspects.includes(a) ? '' : 'disabled'} onclick="setAspect('${a}')">${a}</button>`).join('');
   const au = $('#oAudio'); au.disabled = m.audio !== 'switch'; au.checked = m.audio === 'always' ? true : m.audio === 'off' ? false : !!S.audio;
   $('#oAudioNote').textContent = m.audio === 'always' ? 'Kling pune mereu sunet; îl descrii în prompt.' : m.audio === 'off' ? 'fără sunet' : '';
-  renderCostLine(); saveS(); renderRec();
+  renderCostLine(); renderDialogueTime(); saveS(); renderRec();
   const b2 = $('#oBest2'); if(b2) b2.checked = S.best2 === 'on';
 }
 function setOpt(k, v){ S[k] = k === 'sec' ? +v : k === 'audio' ? !!v : v; renderOpts(); }
 async function setAspect(a){ S.aspect = a; renderOpts(); await applyAspect(); }
 function clipCost(final = true){
   const m = MODELE[S.mk];
-  return final ? costClip(S.mk, S.res, +S.sec, m.audio === 'always' || (m.audio === 'switch' && S.audio), false)
+  return final ? costClip(S.mk, S.res, +S.sec, m.audio === 'always' || (m.audio === 'switch' && S.audio && !C.dialogue.trim()), false)
     : costClip(SCHITA.model, SCHITA.res, draftSec(+S.sec), false, true);
 }
 // 1.2.1: schița are aceeași durată ca finalul (P-Video-2 acceptă 1–20 s pe Runware; 1.0–1.2 o tăiau greșit la 8 s)
@@ -296,11 +296,14 @@ function renderCostLine(){
   const f = clipCost(true), d = clipCost(false), today = ((S.costs || {}).days || {})[dayKey()] || 0;
   el.innerHTML = `Schiță: <b>${usdC(d.usd)}</b> · Final: <b>${f.min ? 'de la ' : ''}${usdC(f.usd)}</b>${f.min ? ' <span class="muted">(preț 1080p nepublicat; costul real apare după clip)</span>' : ''} · Azi: ${usdC(today)}`;
   if(+S.sec > 20) el.innerHTML += ` <span class="muted">(schița: 20 s, maximul P-Video-2)</span>`;
+  const dialogue = C.dialogue.trim(), dub = dialogue ? costLipsync({sec:+S.sec}, C.dialogue.length) : 0;
+  if(dialogue) el.innerHTML += ` <span class="muted">· Voce și buze: aprox. ${usdC(dub)} / variantă</span>`;
   const n2 = S.best2 === 'on' ? 2 : 1, x2 = n2 > 1 ? ' (×2)' : '';
-  const bd = $('#btnDraft'), bf = $('#btnFinal'); if(bd) bd.textContent = `Schiță · ${usdC(d.usd * n2)}${x2}`; if(bf) bf.textContent = `Clip final · ${f.min ? '≥' : ''}${usdC(f.usd * n2)}${x2}`;
+  const bd = $('#btnDraft'), bf = $('#btnFinal'); if(bd) bd.textContent = `Schiță · ${usdC(d.usd * n2)}${x2}`; if(bf) bf.textContent = `Clip final · ${f.min ? '≥' : ''}${usdC((f.usd + dub) * n2)}${x2}`;
 }
 function renderPrompt(){
   $('#cText').value = C.text;
+  renderVoiceStudio();
   const has = !!C.prompt, stale = has && !C.edited && C.promptKey !== promptKey() && C.promptKey !== promptKey(SCHITA.model);
   $('#pBox').hidden = !has;
   if(has) renderLen();
@@ -320,12 +323,63 @@ function renderPrompt(){
     + (!C.fits ? `<div class="warn">Pașii nu încap firesc în ${S.sec} s${C.secSuggest ? `: recomand ${C.secSuggest} s. <button class="sm" onclick="useSuggest()">Pune ${C.secSuggest} s</button>` : '. Scurtează textul sau alege o durată mai mare.'}</div>` : '')
     + (C.missing && C.missing.length ? `<div class="muted">Accentuat față de încercarea anterioară: ${esc(C.missing.join('; '))}</div>` : '') : '';
 }
+const STUDIO_DEFAULT_ACTION = 'Privește spre cameră, fața și buzele sunt vizibile, mișcări naturale și discrete.';
+const STUDIO_VIDEO_DIRECTION = 'Keep the face and lips visible for dubbing. No audible dialogue, subtitles or background music.';
+const VOICE_LABELS = {warm:'Cald și afectuos', gentle:'Blând și liniștitor', playful:'Jucăuș', neutral:'Neutru'};
+function voiceProfile(c){
+  return {voice:TTS_VOICES.includes(c && c.ttsVoice) ? c.ttsVoice : 'Gacrux',
+    style:c && Object.hasOwn(TTS_STYLES, c.ttsStyle) ? c.ttsStyle : 'warm'};
+}
+function renderVoiceStudio(){
+  const c = charById(C.charId), {voice, style} = voiceProfile(c);
+  $('#cDialogue').value = C.dialogue;
+  $('#cDialogue').disabled = !c;
+  $('#cVoice').disabled = $('#cVoiceStyle').disabled = !c;
+  $('#cVoice').innerHTML = TTS_VOICES.map(v => '<option>' + v + '</option>').join('');
+  $('#cVoiceStyle').innerHTML = Object.entries(VOICE_LABELS).map(([key, label]) => '<option value="' + key + '">' + label + '</option>').join('');
+  $('#cVoice').value = voice;
+  $('#cVoiceStyle').value = style;
+  $('#cVoiceStatus').textContent = c ? 'Vocea și stilul se salvează pentru ' + c.name + '.' : 'Alege un personaj pentru a adăuga o replică.';
+  renderDialogueTime();
+}
+async function setVoiceProfile(){
+  const c = charById(C.charId);
+  if(!c) return;
+  c.ttsVoice = $('#cVoice').value;
+  c.ttsStyle = $('#cVoiceStyle').value;
+  renderDialogueTime();
+  try{ await saveChars(); }catch(e){ toast('Profilul vocal nu a putut fi salvat. Alege din nou vocea sau stilul.', 6000); }
+}
+function onDialogue(value){
+  C.dialogue = value;
+  renderDialogueTime();
+  renderLen();
+  renderCostLine();
+}
+function dialogueSeconds(text, style){
+  const words = (text.match(/[\p{L}\p{N}]+(?:[-’'][\p{L}\p{N}]+)*/gu) || []).length;
+  const pauses = (text.match(/[.!?…]+|[,;:]/g) || []).length;
+  return Math.ceil(words * 60 / (style === 'gentle' ? 115 : 140) + pauses * .2 + .5);
+}
+function renderDialogueTime(){
+  const el = $('#cDialogueTime'), text = C.dialogue.trim();
+  el.hidden = !text;
+  if(!text) return;
+  const seconds = dialogueSeconds(text, voiceProfile(charById(C.charId)).style);
+  el.className = seconds > +S.sec ? 'warn' : 'muted';
+  el.textContent = 'Replică: aprox. ' + seconds + ' s · clip: ' + S.sec + ' s.'
+    + (seconds > +S.sec ? ' Replica poate fi tăiată. Mărește durata sau scurtează textul.' : '');
+}
+function studioVideoPrompt(prompt){
+  return prompt.trimEnd() + '\n' + STUDIO_VIDEO_DIRECTION;
+}
+
 const fmtS = v => String(Math.round(v * 10) / 10).replace('.', ',');
 async function useSuggest(){ if(!C.secSuggest) return; setOpt('sec', C.secSuggest); const b = $('#btnPrep'); b.disabled = true; b.textContent = 'Claude refă planul…'; try{ await preparePrompt(); }catch(e){ toast(e.message, 6000); } finally{ b.disabled = false; b.textContent = 'Pregătește promptul'; } }
 function onText(v){ C.text = v; C.missing = null; clearTimeout(onText.t); onText.t = setTimeout(renderRec, 400); }
 function onPromptEdit(v){ C.prompt = v; C.edited = true; renderLen(); }
 // 1.2: câte caractere are promptul (Runware: cel mult 2.000)
-function renderLen(){ const el = $('#pLen'); if(!el) return; const n = String(C.prompt || '').trim().length; el.className = n > PROMPT_MAX ? 'errtxt' : 'muted'; el.textContent = `${n.toLocaleString('ro-RO')} / ${PROMPT_MAX.toLocaleString('ro-RO')} caractere` + (n > PROMPT_MAX ? ' — prea lung: Runware nu-l primește. Scurtează-l.' : ''); }
+function renderLen(){ const el = $('#pLen'); if(!el) return; const n = (C.prompt && C.dialogue.trim() ? studioVideoPrompt(C.prompt) : String(C.prompt || '')).trim().length; el.className = n > PROMPT_MAX ? 'errtxt' : 'muted'; el.textContent = `${n.toLocaleString('ro-RO')} / ${PROMPT_MAX.toLocaleString('ro-RO')} caractere` + (n > PROMPT_MAX ? ' — prea lung: Runware nu-l primește. Scurtează-l.' : ''); }
 // 1.6: planul + promptul pentru orice scenă (clip sau poveste), fără să depindă de ecranul Creează
 async function planFor({text, start, mk, sec, audio, c, missing, framing}){
   const m = MODELE[mk];
@@ -334,11 +388,14 @@ async function planFor({text, start, mk, sec, audio, c, missing, framing}){
 }
 async function preparePrompt(mk = S.mk, sec = +S.sec, audio = S.audio){
   if(!C.start) throw new Error('Alege întâi poza de start.');
-  if(!C.text.trim()) throw new Error('Scrie ce să facă personajul.');
-  if(S.useClaude !== 'on' || !S.clKey){ C.prompt = C.text; C.steps = []; C.fits = true; C.nota = 'fără Claude: textul tău merge direct la model'; C.edited = false; C.promptKey = promptKey(mk); renderPrompt(); return C.prompt; }
+  const dialogue = !!C.dialogue.trim(), text = C.text.trim() ? C.text : dialogue ? STUDIO_DEFAULT_ACTION : '';
+  if(!text) throw new Error('Scrie ce să facă personajul sau adaugă replica exactă.');
+  const key = promptKey(mk), start = C.start;
+  if(S.useClaude !== 'on' || !S.clKey){ C.prompt = text; if(dialogue){ C.plan = null; C.endPose = null; C.end = null; C.endFor = null; C.endScore = null; } C.steps = []; C.fits = true; C.nota = 'fără Claude: textul tău merge direct la model'; C.edited = false; C.promptKey = promptKey(mk); renderPrompt(); return C.prompt; }
   const c = charById(C.charId), m = MODELE[mk];
   if(mk === SCHITA.model) sec = draftSec(sec);
-  const r = await planFor({text:C.text, start:C.start, mk, sec, audio, c, missing:C.missing, framing:C.view && C.view.en});
+  const r = await planFor({text, start, mk, sec, audio:dialogue ? false : audio, c, missing:C.missing, framing:C.view && C.view.en});
+  if(key !== promptKey(mk) || start !== C.start) throw new Error('Scena s-a schimbat. Pregătește promptul din nou.');
   C.plan = r.plan || null;
   if(r.plan && r.plan.endPose !== C.endPose){ C.endPose = r.plan.endPose; C.end = null; C.endFor = null; C.endScore = null; }
   if(!r.video) throw new Error(r.nota || 'Claude a refuzat cererea.');
@@ -391,26 +448,45 @@ async function redoEnd(){ C.end = null; C.endFor = null; const b = $('#btnEndRe'
 async function btnPrepare(){ const b = $('#btnPrep'); b.disabled = true; b.textContent = 'Claude scrie…'; try{ await preparePrompt(); await ensureEnd(S.mk, b); }catch(e){ toast(e.message, 6000); } finally{ b.disabled = false; b.textContent = 'Pregătește promptul'; } }
 async function send(final){
   if(!S.rwKey) return toast('Lipsește cheia Runware (Setări).');
-  const btn = final ? $('#btnFinal') : $('#btnDraft'); btn.disabled = true;
+  if(send.pending) return;
+  send.pending = true;
+  const btn = final ? $('#btnFinal') : $('#btnDraft');
+  $('#btnFinal').disabled = $('#btnDraft').disabled = true;
   try{
-    const tmk = final ? S.mk : SCHITA.model;
-    if(!C.prompt || (!C.edited && C.promptKey !== promptKey(tmk))){ btn.textContent = 'Claude scrie promptul…'; await preparePrompt(tmk); }
-    if(String(C.prompt).trim().length > PROMPT_MAX) throw new Error(`Promptul are ${String(C.prompt).trim().length} caractere; Runware primește cel mult ${PROMPT_MAX}. Scurtează-l sau șterge-l ca să-l refacă Claude.`);
+    const model = S.mk, resolution = S.res, aspect = S.aspect, best2 = S.best2;
+    const tmk = final ? model : SCHITA.model;
+    if(!C.start) throw new Error('Alege întâi poza de start.');
+    const c = charById(C.charId), dialogue = C.dialogue.trim() ? C.dialogue : '';
+    if(dialogue && !c) throw new Error('Alege personajul care rostește replica.');
+    if(dialogue.length > 4000) throw new Error('Replica poate avea cel mult 4.000 de caractere.');
+    const voiceStudio = dialogue ? {text:dialogue, ...voiceProfile(c)} : null;
+    const sceneKey = promptKey(tmk), sceneStart = C.start;
+    const checkScene = () => {
+      if(model !== S.mk || resolution !== S.res || aspect !== S.aspect || best2 !== S.best2 ||
+        sceneKey !== promptKey(tmk) || sceneStart !== C.start || dialogue !== (C.dialogue.trim() ? C.dialogue : ''))
+        throw new Error('Scena s-a schimbat. Verifică setările și pornește din nou.');
+    };
+    if(!C.prompt || (!C.edited && C.promptKey !== promptKey(tmk))){ btn.textContent = 'Pregătesc promptul…'; await preparePrompt(tmk); }
+    checkScene();
+    const prompt = voiceStudio ? studioVideoPrompt(C.prompt) : C.prompt;
+    if(String(prompt).trim().length > PROMPT_MAX) throw new Error(`Promptul are ${String(prompt).trim().length} caractere; Runware primește cel mult ${PROMPT_MAX}. Scurtează-l sau șterge-l ca să-l refacă Claude.`);
     const mk = final ? S.mk : SCHITA.model, m = MODELE[mk];
-    const p = {mk, res:final ? S.res : SCHITA.res, sec:final ? +S.sec : draftSec(+S.sec), audio:final ? (m.audio === 'always' || (m.audio === 'switch' && !!S.audio)) : false, draft:!final, aspect:S.aspect};
+    const p = {mk, res:final ? S.res : SCHITA.res, sec:final ? +S.sec : draftSec(+S.sec), audio:final ? (m.audio === 'always' || (m.audio === 'switch' && !!S.audio && !voiceStudio)) : false, draft:!final, aspect:S.aspect};
     const est = costClip(p.mk, p.res, p.sec, p.audio, p.draft);
     if(isYoung(charById(C.charId))) throw new Error(`Personajul pare sub ${AGE_MIN} de ani: nu se folosește pentru clipuri.`);
     const end = await ensureEnd(mk, btn);
-    const startKey = await putBlob('img', C.start), endKey = end && anchorOn(mk) ? await putBlob('img', end) : null;
+    checkScene();
+    const startKey = await putBlob('img', sceneStart), endKey = end && anchorOn(mk) ? await putBlob('img', end) : null;
+    checkScene();
     const n2 = S.best2 === 'on' ? 2 : 1, gid = n2 > 1 ? uid() : null;   // 1.6: cel mai bun din 2
     for(let k = 0; k < n2; k++){
-    const job = {id:uid(), at:Date.now(), charId:C.charId, group:gid, gi:k, text:C.text, prompt:C.prompt, nota:C.nota, steps:C.edited ? [] : (C.steps || []), start:startKey, startScore:C.score ?? null, end:endKey, endPose:C.endPose || '', endScore:endKey ? C.endScore : null, ...p, est:est.usd, estMin:est.min, state:'trimit'};
+    const job = {id:uid(), at:Date.now(), charId:C.charId, group:gid, gi:k, text:C.text || (voiceStudio ? voiceStudio.text : ''), prompt, ...(voiceStudio ? {voiceStudio} : {}), nota:C.nota, steps:C.edited ? [] : (C.steps || []), start:startKey, startScore:C.score ?? null, end:endKey, endPose:C.endPose || '', endScore:endKey ? C.endScore : null, ...p, est:est.usd, estMin:est.min, state:'trimit'};
     jobs.unshift(job); await saveJobs(); renderJobs();
     runJob(job);
     }
     toast((n2 > 1 ? 'Două variante, aleg singur cea mai bună. ' : '') + (final ? 'Clipul final a pornit. Poți închide aplicația; continuă la Runware.' : 'Schița a pornit.'));
   }catch(e){ toast(String(e.message || e), 6000); }
-  finally{ btn.disabled = false; renderCostLine(); }
+  finally{ send.pending = false; $('#btnFinal').disabled = $('#btnDraft').disabled = false; renderCostLine(); }
 }
 
 /* ───────── lucrări (persistente: se reiau la pornire) ───────── */
@@ -420,8 +496,18 @@ let VQ = Promise.resolve();
 function vAcquire(){ let r; const p = new Promise(x => r = x), prev = VQ; VQ = prev.then(() => p); return prev.then(() => r); }
 async function runJob(job, resume, got){
   try{
+    if(job.voiceStudio && job.kind === 'lipsync' && clips.some(c => c.id === 'voice-' + job.id)){
+      jobs = jobs.filter(j => j.id !== job.id);
+      await saveJobs(); renderJobs();
+      return;
+    }
+    if(job.voiceStudio && !job.draft && !job.kind){
+      const base = clips.find(c => c.id === 'base-' + job.id);
+      if(base) return await startStudioDubbing(job, base);
+    }
     if(!job.taskUUID){
-      if(resume) throw new Error('Trimiterea s-a întrerupt înainte să ajungă la Runware.');
+      if(resume && job.voiceStudio && job.kind === 'lipsync' && job.state === 'eroare') return;
+      if(resume && !(job.voiceStudio && job.kind === 'lipsync')) throw new Error('Trimiterea s-a întrerupt înainte să ajungă la Runware.');
       let task;
       if(job.kind && job.kind !== 'video') task = await postTask(job);   // 1.6: reparat fața, mărit, voce
       else {
@@ -443,7 +529,7 @@ async function runJob(job, resume, got){
     const vb = await fetchBlob(x.videoURL || x.mediaURL || x.outputURL, 'video/mp4');
     const cost = +x.cost > 0 ? +x.cost : job.est; addCost('runware', cost);
     const vid = await putBlob('vid', vb), rw = {uuid:x.videoUUID || null, url:x.videoURL || null};   // 1.6: codul clipului la Runware, pentru prelucrări
-    if(job.kind && job.kind !== 'video') return finishPost(job, x, vb, vid, rw, cost);
+    if(job.kind && job.kind !== 'video') return await finishPost(job, x, vb, vid, rw, cost);
     let frames = [], score = null, th = null, body = null, check = null;
     const rel = await vAcquire(); try{   // 1.7: verificările din telefon (cadre, față, corp) pe rând: mai multe clipuri gata deodată nu mai umplu memoria
     job.state = 'verific'; updJob(job);
@@ -456,10 +542,13 @@ async function runJob(job, resume, got){
     // 1.1: au apărut pașii ceruți? (Claude vede 8 cadre)
     if(S.checkSteps !== 'off' && S.clKey && job.steps && job.steps.length && frames.length >= 4){ job.state = 'pasi'; updJob(job); try{ check = await clCheckSteps(job.steps, frames); }catch(e){ check = {err:String(e.message || e).slice(0, 160)}; } }
     } finally { rel(); }
-    const clip = {id:uid(), at:Date.now(), charId:job.charId, text:job.text, prompt:job.prompt, nota:job.nota, start:job.start, startScore:job.startScore,
+    const dubbed = job.voiceStudio && !job.draft;
+    const clip = {id:dubbed ? 'base-' + job.id : uid(), at:Date.now(), charId:job.charId, text:job.text, prompt:job.prompt, nota:job.nota, start:job.start, startScore:job.startScore,
       mk:job.mk, res:job.res, sec:job.sec, audio:job.audio, draft:job.draft, aspect:job.aspect, cost, costReal:+x.cost > 0, vid, th, score, body, steps:job.steps || [], check, end:job.end || null, endScore:job.endScore || null, endPose:job.endPose || '',
-      rw, group:job.group || null, storyId:job.storyId || null, seg:job.seg ?? null};
+      rw, group:dubbed ? null : job.group || null, storyId:job.storyId || null, seg:job.seg ?? null,
+      ...(job.voiceStudio ? {voiceStudio:job.voiceStudio, ...(dubbed ? {tag:'video sursă'} : {})} : {})};
     clips.unshift(clip); await saveClips();
+    if(dubbed) return await startStudioDubbing(job, clip);
     jobs = jobs.filter(j => j.id !== job.id); await saveJobs();
     if(job.group) await groupDone(job.group);
     if(job.storyId) storyNext(job.storyId);
@@ -484,6 +573,15 @@ async function runJob(job, resume, got){
     if(job.storyId) storyPause(job.storyId, job.err);
   }
 }
+async function startStudioDubbing(job, clip){
+  if(!clipSrc(clip)) throw new Error('Runware nu a returnat o sursă video pentru sincronizarea buzelor.');
+  Object.assign(job, {kind:'lipsync', src:clip.id, opts:job.voiceStudio,
+    est:costLipsync(clip, job.voiceStudio.text.length), estMin:false, state:'voce'});
+  delete job.taskUUID;
+  await saveJobs();
+  renderJobs(); renderLast();
+  return runJob(job);
+}
 const JOB_AC = {}, JOB_RW = {};   // 1.0.1: oprirea și ce a răspuns Runware ultima dată, pe lucrare
 /* 1.6: rezultatul unei prelucrări devine un clip nou, legat de cel de pornire (parent) */
 async function finishPost(job, x, vb, vid, rw, cost){
@@ -494,16 +592,18 @@ async function finishPost(job, x, vb, vid, rw, cost){
   let score = src.score || null, body = src.body || null;
   if(job.kind === 'replace' && frames.length){ const c = charById(job.charId); if(c) try{ score = await clipScore(c, frames); }catch(e){} try{ body = await bodyScore(await DB.get(src.start), frames); }catch(e){} }
   const tag = {replace:'fața reparată', upscale:`mărit ${job.opts.res}${job.opts.fps ? ' · ' + job.opts.fps + ' fps' : ''}`, lipsync:'cu voce'}[job.kind];
-  const clip = {...src, id:uid(), at:Date.now(), parent:src.id || null, kind:job.kind, tag, vid, th, rw, cost:cost + (job.ttsCost || 0), costReal:+x.cost > 0, score, body,
+  const studio = job.voiceStudio && job.kind === 'lipsync';
+  const clip = {...src, id:studio ? 'voice-' + job.id : uid(), at:Date.now(), parent:src.id || null, kind:job.kind, tag, vid, th, rw, cost:cost + (job.ttsCost || 0), audio:job.kind === 'lipsync' ? true : src.audio, costReal:+x.cost > 0, score, body,
     res:job.kind === 'upscale' ? job.opts.res : job.kind === 'replace' ? job.opts.res : src.res, lipText:job.kind === 'lipsync' ? job.opts.text : src.lipText || '',
     lipAudioUrl:job.kind === 'lipsync' ? job.audioUrl : null,
     lipVoice:job.kind === 'lipsync' ? job.opts.voice : null,
-    lipStyle:job.kind === 'lipsync' ? job.opts.style : null, group:null, alt:false};
+    lipStyle:job.kind === 'lipsync' ? job.opts.style : null, group:studio ? job.group : null, alt:false};
   if(job.callSet && job.kind==='lipsync'){
     clip.callStudio={mode:'scripted',dialogue:job.callSet.dialogue,voice:job.callSet.voice,style:job.callSet.style,role:job.callSet.role};
   }
   clips.unshift(clip); await saveClips();
   jobs = jobs.filter(j => j.id !== job.id); await saveJobs();
+  if(studio && job.group) await groupDone(job.group);
   // Nu atribui automat clipul cu dialog fix rolului din apel: Taifas 14.9.2
   // încă ignoră pista audio și ar putea afișa o replică nepotrivită.
   // Clipul final rămâne în galerie cu metadatele callStudio pentru etapa de integrare.
@@ -681,8 +781,9 @@ async function saveClip(id){
 async function reuse(id, final, fix){
   const x = clips.find(c => c.id === id); if(!x) return;
   closeSheet();
-  C.charId = x.charId; C.text = x.text || ''; C.startRaw = await DB.get(x.start); C.start = C.startRaw; C.crop = null; C.box = null; C.body = null; C.bbox = null; C.view = null; C.boxFor = null; C.shift = 0; C.startSrc = 'clip:' + x.id; C.score = x.startScore;
-  S.aspect = x.aspect || S.aspect; C.prompt = x.draft ? '' : x.prompt; C.edited = false; C.promptKey = x.draft ? '' : promptKey(x.mk); C.nota = x.nota || '';
+  C.dialogue = charById(x.charId) && x.voiceStudio ? x.voiceStudio.text : '';
+  C.charId = x.charId; C.text = x.voiceStudio && x.text === x.voiceStudio.text ? '' : x.text || ''; C.startRaw = await DB.get(x.start); C.start = C.startRaw; C.crop = null; C.box = null; C.body = null; C.bbox = null; C.view = null; C.boxFor = null; C.shift = 0; C.startSrc = 'clip:' + x.id; C.score = x.startScore;
+  S.aspect = x.aspect || S.aspect; C.prompt = x.draft || x.voiceStudio ? '' : x.prompt; C.edited = false; C.promptKey = x.draft ? '' : promptKey(x.mk); C.nota = x.nota || '';
   C.steps = x.steps || []; C.fits = true; C.secSuggest = null; C.missing = null;
   C.endPose = x.endPose || ''; C.end = null; C.endFor = null; C.endScore = null;   /* 1.5: cadrul final se face din nou */
   if(fix){ C.missing = missOf(x); C.prompt = ''; C.edited = false; C.steps = []; if(x.mk !== SCHITA.model){ S.mk = x.mk; S.res = x.res; S.sec = x.sec; } }   // 1.1: același model, plan refăcut

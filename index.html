@@ -129,24 +129,35 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
       <div id="stPlan"></div>
     </section>
     <div id="clipPane">
-    <section class="box"><h3>Ce face</h3>
+    <section class="box"><h3>Voice &amp; Dialogue Studio</h3>
+      <label for="cText">Ce face personajul</label>
       <textarea id="cText" rows="4" placeholder="ex.: se uită spre cameră, zâmbește, își dă părul după ureche și face un pas spre mine" oninput="onText(this.value)"></textarea>
-      <div class="row"><button class="sm ghost" id="btnPrep" onclick="btnPrepare()">Pregătește promptul</button><span class="muted">Claude îl scrie pentru model și se uită la poză.</span></div>
-      <div id="pBox" hidden><div id="pSteps"></div><div id="pEnd"></div><label>Promptul pentru model (îl poți modifica)<textarea id="pText" rows="8" class="mono" oninput="onPromptEdit(this.value)"></textarea></label><div class="muted" id="pLen"></div><div class="muted" id="pNota"></div></div>
+      <label for="cDialogue">Replica exactă <span class="muted">(opțional)</span></label>
+      <textarea id="cDialogue" rows="3" maxlength="4000" placeholder="Ex.: Bine ai venit! Mă bucur să te văd." oninput="onDialogue(this.value)"></textarea>
+      <div class="grid2">
+        <label>Voce<select id="cVoice" onchange="setVoiceProfile()"></select></label>
+        <label>Stil vocal<select id="cVoiceStyle" onchange="setVoiceProfile()"></select></label>
+      </div>
+      <p class="muted" id="cVoiceStatus" role="status"></p>
+      <p id="cDialogueTime" role="status" hidden></p>
+      <details id="promptDetails"><summary>Prompt și plan</summary>
+      <div class="row"><button class="sm ghost" id="btnPrep" onclick="btnPrepare()">Pregătește promptul</button><span class="muted">Pregătirea poate folosi Claude și poate genera cadrul final.</span></div>
+      <div id="pBox" hidden><div id="pSteps"></div><div id="pEnd"></div><label>Promptul pentru model (îl poți modifica). Cu replică, Animas adaugă indicații pentru dublaj.<textarea id="pText" rows="8" class="mono" oninput="onPromptEdit(this.value)"></textarea></label><div class="muted" id="pLen"></div><div class="muted" id="pNota"></div></div>
+      </details>
     </section>
     <section class="box"><h3>Clipul</h3>
+      <label>Durată<select id="oSec" onchange="setOpt('sec', this.value)"></select></label>
+      <label>Format</label><div class="row" id="oAspect"></div>
+      <details><summary>Setări avansate</summary>
       <label>Model<select id="oModel" onchange="setOpt('mk', this.value)"></select></label>
       <div id="oRec" class="rec"></div>
-      <div class="grid2">
-        <label>Rezoluție<select id="oRes" onchange="setOpt('res', this.value)"></select></label>
-        <label>Durată<select id="oSec" onchange="setOpt('sec', this.value)"></select></label>
-      </div>
-      <label>Format</label><div class="row" id="oAspect"></div>
+      <label>Rezoluție<select id="oRes" onchange="setOpt('res', this.value)"></select></label>
       <label class="chk"><input type="checkbox" id="oAudio" onchange="setOpt('audio', this.checked)"> Sunet <span class="muted" id="oAudioNote"></span></label>
-      <div id="oCost"></div>
       <label class="chk"><input type="checkbox" id="oBest2" onchange="setFlag('best2', this.checked); renderCostLine(); renderStoryPlan()"> Cel mai bun din 2 (două variante, aleg singur după față, corp și pași; cost × 2)</label>
+      </details>
+      <div id="oCost" aria-live="polite"></div>
       <div class="row wrap"><button class="ghost" id="btnDraft" onclick="send(false)">Schiță</button><button id="btnFinal" onclick="send(true)">Clip final</button></div>
-      <p class="muted">Schița (P-Video-2, 720p) arată mișcarea ieftin; finalul folosește modelul ales.</p>
+      <p class="muted">Schița previzualizează mișcarea fără voce. Clipul final cu replică trece prin video, voce și sincronizarea buzelor. Rezultatele se pot reda din „Ultimul clip” sau din Galerie.</p>
     </section>
     </div>
     <div id="cJobs"></div>
@@ -201,18 +212,18 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
 <div id="updBar" hidden><span>E o versiune nouă: v<b></b></span><button class="sm" onclick="forceUpdate()">⟳ Actualizează</button><button class="sm ghost" onclick="this.parentNode.hidden = true" aria-label="Închide">✕</button></div>
 <div id="toast"></div>
 <!-- 1.9.1: ?v=<versiunea> la fiecare script: la o versiune nouă telefonul cere fișierele noi, nu copia veche (se schimbă odată cu APP_VER) -->
-<script src="prompt.js?v=1.9.6"></script>
-<script src="runware.js?v=1.9.6"></script>
-<script src="claude.js?v=1.9.6"></script>
-<script src="face.js?v=1.9.6"></script>
-<script src="body.js?v=1.9.6"></script>
-<script src="post.js?v=1.9.6"></script>
-<script src="story.js?v=1.9.6"></script>
-<script src="callset.js?v=1.9.6"></script>
-<script src="videoMerger.js?v=1.9.6"></script>
-<script src="videoAnalyzer.js?v=1.9.6"></script>
-<script src="continuityEngine.js?v=1.9.6"></script>
-<script src="montaj.js?v=1.9.6"></script>
-<script src="app.js?v=1.9.6"></script>
+<script src="prompt.js?v=1.10"></script>
+<script src="runware.js?v=1.10"></script>
+<script src="claude.js?v=1.10"></script>
+<script src="face.js?v=1.10"></script>
+<script src="body.js?v=1.10"></script>
+<script src="post.js?v=1.10"></script>
+<script src="story.js?v=1.10"></script>
+<script src="callset.js?v=1.10"></script>
+<script src="videoMerger.js?v=1.10"></script>
+<script src="videoAnalyzer.js?v=1.10"></script>
+<script src="continuityEngine.js?v=1.10"></script>
+<script src="montaj.js?v=1.10"></script>
+<script src="app.js?v=1.10"></script>
 </body>
 </html>

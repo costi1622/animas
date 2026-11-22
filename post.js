@@ -32,7 +32,7 @@ const TTS_STYLES = {
 function ttsTask(text, voice, style){
   return {taskType:'audioInference', taskUUID:crypto.randomUUID(), model:POST.tts.id,
     outputType:'URL', outputFormat:'MP3',
-    speech:{text:String(text).trim().slice(0, 4000), voice:TTS_VOICES.includes(voice) ? voice : 'Gacrux'},
+    speech:{text:String(text).slice(0, 4000), voice:TTS_VOICES.includes(voice) ? voice : 'Gacrux'},
     settings:{style:TTS_STYLES[style] || TTS_STYLES.warm}};
 }
 function lipsyncTask(src, audioUrl){
@@ -68,9 +68,19 @@ async function postTask(job){
     }
     if(!job.audioUrl){
       job.state = 'voce'; updJob(job);
-      const t = ttsTask(job.opts.text, job.opts.voice || (c && c.ttsVoice), job.opts.style || (c && c.ttsStyle)); await rwSend(t);
-      const a = await rwWait(t.taskUUID, 'image', {maxMs:5 * 60e3});
-      if(+a.cost > 0) addCost('runware', +a.cost);
+      const t = ttsTask(job.opts.text, job.opts.voice || (c && c.ttsVoice), job.opts.style || (c && c.ttsStyle));
+      let a, sending = false;
+      try{
+        if(!job.ttsUUID){
+          if(job.voiceStudio){ job.ttsUUID = t.taskUUID; await saveJobs(); }
+          sending = true; await rwSend(t); sending = false;
+        }
+        a = await rwWait(job.ttsUUID || t.taskUUID, 'image', {maxMs:5 * 60e3});
+      }catch(e){
+        if(e.notFound || e.taskFailed || (sending && !e.net)) delete job.ttsUUID;
+        throw e;
+      }
+      if(a && +a.cost > 0) addCost('runware', +a.cost);
       if(!a || !a.audioURL || !/^https:\/\//i.test(a.audioURL)) throw new Error('Runware nu a returnat un URL audio valid. Dublajul nu a fost pornit.');
       job.audioUrl = a.audioURL; job.ttsCost = +a.cost || 0; await saveJobs();
     }
