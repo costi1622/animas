@@ -229,23 +229,65 @@ function continuityStatus(st){
     +(r.accepted?'<div class="ok">✓ Tranziție acceptată manual</div>':`<button class="sm ghost" onclick="continuityApprove('${st.id}')">✓ Am verificat și accept tranziția</button>`);
 }
 // 1.13: instrumente locale de inspecție, exclusiv din clipurile deja salvate.
+// 1.13.1: două playere pregătite înainte de redare; evităm schimbarea src pe același player.
+let transitionSession = null;
+function stopTransitionPreview(){
+  const t=transitionSession; transitionSession=null;
+  if(!t)return;
+  t.stopped=true;
+  for(const v of t.players){try{v.pause();v.removeAttribute('src');v.load();}catch(_){}}
+  for(const u of t.urls)URL.revokeObjectURL(u);
+}
 async function storyPreviewTransition(sid){
   const st=storyById(sid);if(!st)return;
   const cs=storyClips(st);if(cs.length<2)return toast('Ai nevoie de două scene finalizate.');
-  const a=cs[cs.length-2],b=cs[cs.length-1];
-  const blobs=await Promise.all([DB.get(a.vid),DB.get(b.vid)]);
-  if(blobs.some(x=>!(x instanceof Blob)||!x.size))return toast('Lipsește un videoclip salvat.');
-  const urls=blobs.map(x=>URL.createObjectURL(x));
-  const player=$('#stPlayer');if(player)player.pause();
-  const slot=$('#transitionPreview');if(!slot){urls.forEach(URL.revokeObjectURL);return;}
-  slot.innerHTML='<b>Previzualizare gratuită: ultimele 2 s → primele 2 s</b><div class="muted">Clipurile sunt redate local. Nu se face nicio cerere Runware.</div><video id="transitionVideo" controls playsinline class="player"></video><div class="row wrap"><button class="sm ghost" onclick="storyPreviewTransition(\''+sid+'\')">↻ Repetă tranziția</button></div>';
-  const v=$('#transitionVideo');let idx=0;
-  const cleanup=()=>urls.forEach(URL.revokeObjectURL);
-  // Păstrăm URL-urile până când se închide panoul; eliberăm la redeschidere.
-  window.__transitionPreviewUrls=window.__transitionPreviewUrls||[];
-  window.__transitionPreviewUrls.forEach(URL.revokeObjectURL);window.__transitionPreviewUrls=urls;
-  function playPart(i){idx=i;v.src=urls[i];v.onloadedmetadata=()=>{const target=i===0?Math.max(0,v.duration-2):0;if(target>0.02)v.currentTime=target;else v.play().catch(()=>{});};v.onseeked=()=>v.play().catch(()=>{});v.onended=()=>{if(i===0)playPart(1);};v.ontimeupdate=()=>{if(i===1&&v.currentTime>=2){v.pause();v.ontimeupdate=null;}};}
-  playPart(0);
+  stopTransitionPreview();
+  const slot=$('#transitionPreview');if(!slot)return;
+  slot.textContent='Pregătesc local ambele clipuri…';
+  let urls=[];
+  try{
+    const pair=cs.slice(-2),blobs=await Promise.all(pair.map(c=>DB.get(c.vid)));
+    if(blobs.some(b=>!(b instanceof Blob)||!b.size))throw Error('Lipsește un videoclip salvat.');
+    urls=blobs.map(b=>URL.createObjectURL(b));
+    const old=$('#stPlayer');if(old)old.pause();
+    slot.innerHTML=`<b>Previzualizare gratuită: ultimele 2 s → primele 2 s</b><div class="muted" id="transitionInfo">Pregătesc ambele clipuri local, fără Runware.</div><div class="transition-stack" style="position:relative;overflow:hidden;background:#000;border-radius:12px;aspect-ratio:9/16;max-height:65vh"><video id="transitionA" playsinline muted preload="auto" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:1"></video><video id="transitionB" playsinline muted preload="auto" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0"></video></div><div class="row wrap"><button class="sm ghost" id="transitionReplay" disabled onclick="storyPreviewTransition('${sid}')">↻ Repetă tranziția</button></div>`;
+    const players=[$('#transitionA'),$('#transitionB')];
+    const session={urls,players,stopped:false};transitionSession=session;
+    const wait=(v,event,timeout=12000)=>new Promise((resolve,reject)=>{
+      let timer;const clean=()=>{clearTimeout(timer);v.removeEventListener(event,ok);v.removeEventListener('error',bad);};
+      const ok=()=>{clean();resolve();},bad=()=>{clean();reject(Error('Nu se poate decoda clipul.'));};
+      v.addEventListener(event,ok,{once:true});v.addEventListener('error',bad,{once:true});
+      timer=setTimeout(()=>{clean();reject(Error('Timeout la pregătirea clipului.'));},timeout);
+    });
+    await Promise.all(players.map(async(v,i)=>{const ready=wait(v,'loadedmetadata');v.src=urls[i];await ready;}));
+    if(session.stopped)return;
+    const startA=Math.max(0,players[0].duration-2),endA=Math.max(startA,players[0].duration-.05);
+    const endB=Math.min(2,players[1].duration);
+    await Promise.all(players.map(async(v,i)=>{
+      const target=i===0?startA:0;
+      if(target>.02){const seek=wait(v,'seeked');v.currentTime=target;await seek;}
+      else if(v.readyState<2)await wait(v,'loadeddata');
+    }));
+    if(session.stopped)return;
+    const info=$('#transitionInfo'),replay=$('#transitionReplay');if(replay)replay.disabled=false;
+    if(info)info.textContent='Ambele clipuri pregătite. Trecerea se face fără schimbarea sursei playerului. Fără cost API.';
+    let switched=false;
+    const b=players[1],v=players[0];
+    const switchToB=()=>{
+      if(switched||session.stopped)return;switched=true;
+      // Clipul B e deja decodat și poziționat; schimbăm doar vizibilitatea.
+      b.style.opacity='1';v.style.opacity='0';v.pause();
+      b.play().catch(()=>{if(info)info.textContent='Apasă pe ecran pentru a permite redarea.';});
+    };
+    v.ontimeupdate=()=>{if(v.currentTime>=endA) switchToB();};
+    v.onended=switchToB;
+    b.ontimeupdate=()=>{if(b.currentTime>=endB){b.pause();b.ontimeupdate=null;if(info)info.textContent='Previzualizare încheiată. Poți repeta gratuit.';}};
+    await v.play();
+  }catch(e){
+    stopTransitionPreview();
+    urls.forEach(u=>{try{URL.revokeObjectURL(u)}catch(_){}});
+    if(slot)slot.textContent='Previzualizarea nu a reușit: '+e.message;
+  }
 }
 async function storyCompareFrames(sid){
   const st=storyById(sid);if(!st)return;
@@ -285,7 +327,7 @@ async function openStory(sid){
   const st = storyById(sid); if(!st) return;
   const cs = storyClips(st);
   await continuityCheck(st);
-  (window.__transitionPreviewUrls||[]).forEach(u=>URL.revokeObjectURL(u));window.__transitionPreviewUrls=[];
+  stopTransitionPreview();
   storyUrls.forEach(u => URL.revokeObjectURL(u)); storyUrls = [];
   for(const x of cs){ const b = await DB.get(x.vid); if(b) storyUrls.push(URL.createObjectURL(b)); }
   sheet(`<h2>${esc(st.title)}</h2>${storyUrls.length ? '<video id="stPlayer" controls autoplay playsinline class="player"></video>' : '<div class="empty">Nicio scenă gata încă.</div>'}
