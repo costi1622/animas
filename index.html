@@ -130,6 +130,27 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
     </section>
     <div id="clipPane">
     <section class="box"><h3>Voice &amp; Dialogue Studio</h3>
+      <details class="box">
+        <summary>Scene senzuale</summary>
+        <p class="muted">Pentru personaje fictive adulte. Scenele sunt îmbrăcate, iar apropierea e reciprocă.</p>
+        <label for="cSensualScene">Alege o scenă</label>
+        <select id="cSensualScene">
+          <option value="">Alege…</option>
+          <optgroup label="Intimitate">
+            <option value="kissPov">Sărut intens · POV-ul tău</option>
+            <option value="selfTouch">Automângâiere peste bluză</option>
+            <option value="impliedPov">Simulare manuală sugerată · POV</option>
+          </optgroup>
+          <optgroup label="Scene senzuale">
+            <option value="touch">Mângâiere peste bluză</option>
+          <option value="dance">Dans lent, mână pe talie</option>
+          <option value="collar">Gulerul și privirea</option>
+          <option value="hand">Mâini care se caută</option>
+          <option value="almost">Aproape de un sărut</option>
+          </optgroup>
+        </select>
+        <button class="sm ghost" type="button" onclick="applySensualScene()">Folosește scena</button>
+      </details>
       <label for="cText">Ce face personajul</label>
       <textarea id="cText" rows="4" placeholder="ex.: se uită spre cameră, zâmbește, își dă părul după ureche și face un pas spre mine" oninput="onText(this.value)"></textarea>
       <label for="cDialogue">Replica exactă <span class="muted">(opțional)</span></label>
@@ -232,6 +253,6 @@ details summary{color:var(--acc2);cursor:pointer;margin-top:6px}
 <script src="videoAnalyzer.js?v=1.11"></script>
 <script src="continuityEngine.js?v=1.11"></script>
 <script src="montaj.js?v=1.11"></script>
-<script src="app.js?v=1.14.1"></script>
+<script src="app.js?v=1.14.3"></script>
 </body>
 </html>

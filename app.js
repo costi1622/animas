@@ -2,7 +2,7 @@
    Text: doar Claude. Imagine și video: Runware. Fața: ArcFace (din Taifas). Totul rămâne în telefon (IndexedDB). */
 'use strict';
 window.__animas = true;
-const APP_VER = '1.14.1';
+const APP_VER = '1.14.3';
 const BODY_OK = 80;   // 1.4: sub 80% proporțiile corpului s-au schimbat vizibil (~10% abatere)
 
 /* ───────── utilitare ───────── */
@@ -471,6 +471,29 @@ function studioVideoPrompt(prompt){
 
 const fmtS = v => String(Math.round(v * 10) / 10).replace('.', ',');
 async function useSuggest(){ if(!C.secSuggest) return; setOpt('sec', C.secSuggest); const b = $('#btnPrep'); b.disabled = true; b.textContent = 'Claude refă planul…'; try{ await preparePrompt(); }catch(e){ toast(e.message, 6000); } finally{ b.disabled = false; b.textContent = 'Pregătește promptul'; } }
+const SENSUAL_SCENES = {
+  kissPov: 'Două personaje fictive adulte. Camera rămâne la nivelul ochilor partenerului, din perspectiva lui, fără schimbare de unghi. Ea se apropie, îi întâlnește privirea și înclină ușor capul ca răspuns la apropiere. Camera înaintează puțin pentru un sărut intens reciproc, apoi se retrage câțiva centimetri. Ea rămâne în prim-plan. Hainele rămân pe loc.',
+  selfTouch: 'Personaj fictiv adult, singur în cadru. Ea își cuprinde sânii cu ambele mâini peste bluză, îi mângâie încet și își mută jucăuș palmele peste material. Își păstrează expresia relaxată, apoi își lasă mâinile să coboare. Cadru mediu stabil, cu fața și ambele mâini vizibile. Bluza rămâne pe loc.',
+  impliedPov: 'Două personaje fictive adulte, într-un moment intim reciproc. Perspectiva partenerului rămâne pe fața, umerii și partea de sus a corpului ei. Ea îi susține privirea, zâmbește scurt și își mișcă ușor antebrațul la marginea de jos a cadrului, sugerând o stimulare manuală simulată. Gestul și zona intimă rămân în afara imaginii pe tot parcursul clipului. Cameră stabilă, un singur cadru.',
+  touch: 'Două personaje fictive adulte. Din perspectiva partenerului, personajul îi prinde ușor mâna și o îndrumă spre piept, peste bluză. După un semn clar de acord, partenerul îi mângâie ușor sânii peste material, apoi își retrage mâna. Personajul îi susține privirea. Hainele rămân pe loc. Cadru mediu, mișcare lentă.',
+  dance: 'Două personaje fictive adulte dansează lent. Din perspectiva partenerului, o mână vizibilă se așază pe talia personajului după ce acesta se apropie. Fac un pas împreună, se leagănă ușor și se privesc. Cadru mediu, lumină caldă, hainele rămân pe loc.',
+  collar: 'Personajul fictiv adult se apropie, își potrivește gulerul cu două degete, apoi lasă mâna jos și ține privirea către cameră câteva secunde. Expresie discret jucăușă, cadru mediu, hainele rămân pe loc.',
+  hand: 'Două personaje fictive adulte stau aproape. Personajul întinde palma, așteaptă ca partenerul să o prindă, apoi îi mângâie degetele cu degetul mare și zâmbește. Un singur cadru, mâinile și expresia rămân vizibile.',
+  almost: 'Două personaje fictive adulte. Din perspectiva partenerului, personajul se apropie încet, se oprește la câțiva centimetri pentru o privire și un zâmbet scurt, apoi se retrage ușor. Tensiunea vine din apropiere și pauză. Camera rămâne stabilă.'
+};
+function applySensualScene(){
+  const select = $('#cSensualScene'), field = $('#cText');
+  if(!Object.hasOwn(SENSUAL_SCENES, select.value)) return;
+  const scene = SENSUAL_SCENES[select.value];
+  if(field.value.trim() && field.value !== scene && !confirm('Înlocuiești descrierea acțiunii cu scena aleasă?')) return;
+  if(field.value === scene) return;
+  C.prompt = ''; C.promptKey = ''; C.edited = false; C.plan = null;
+  C.steps = []; C.nota = ''; C.fits = true; C.secSuggest = null;
+  field.value = scene;
+  onText(scene);
+  renderPrompt();
+  field.focus();
+}
 function onText(v){ C.text = v; C.missing = null; clearTimeout(onText.t); onText.t = setTimeout(renderRec, 400); }
 function onPromptEdit(v){ C.prompt = v; C.edited = true; renderLen(); }
 // 1.2: câte caractere are promptul (Runware: cel mult 2.000)
